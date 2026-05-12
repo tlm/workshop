@@ -91,13 +91,11 @@ This is a convenience path. It should not be the only way to configure secrets.
 
 A user may add, replace, inspect, or remove routes after a workshop exists.
 
-Example command shape:
-
-```text
-workshop secrets connect dev aws.FOO host-env:FOO
-workshop secrets list dev
-workshop secrets disconnect dev aws.FOO
-```
+Routes are expressed as standard plug/slot connections, so the existing
+Workshop CLI surface is reused rather than introducing a dedicated
+`workshop secrets` command tree. Users edit slots in `workshop.yaml` and
+manage their connections via the regular `workshop connect` /
+`workshop disconnect` / `workshop connections` commands.
 
 After a route changes, Workshop should make the new route available to future
 secret deliveries. A later spec should define whether route changes can trigger
