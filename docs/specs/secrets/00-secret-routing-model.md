@@ -196,7 +196,6 @@ Initial provider candidates:
 
 - `host-env`: read a value from the host process environment.
 - `local-file`: read a selected host file or config fragment.
-- `mock`: return test values for automated tests and demos.
 
 Later provider candidates:
 
@@ -318,7 +317,7 @@ The first implementation should support:
 
 - SDK-declared secret requirements.
 - User-managed routes stored as metadata.
-- A `host-env` or `mock` provider.
+- A `host-env` provider.
 - Pull-based delivery via `workshopctl get-secret`.
 - Non-blocking `workshop launch` when requirements are unrouted.
 - A way to list declared, routed, and unrouted secrets for a workshop.

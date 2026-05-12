@@ -36,7 +36,7 @@ This task implements the core engine that connects these pieces. When an SDK cal
 
 3. **Integration with `workshopctl` (Update SEC-002):**
    - Update the `get-secret` command in `internal/overlord/hookstate/ctlcmd/secret.go`.
-   - Replace the mocked resolution logic with a call to the new `Resolver`.
+   - Replace the stub resolution logic (from SEC-002) with a call to the new `Resolver`.
    - Ensure errors (unrouted, provider not found, access denied) are gracefully caught and printed to `stderr` with appropriate exit codes.
 
 ## Acceptance Criteria

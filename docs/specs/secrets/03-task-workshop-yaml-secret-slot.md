@@ -5,7 +5,7 @@
 **Status:** Ready for Dev
 
 ## Objective
-Extend the `workshop.yaml` parser and internal model to support defining `secret` slots. This allows users to configure how a secret plug is fulfilled by a specific provider (e.g., `host-env` or `mock`).
+Extend the `workshop.yaml` parser and internal model to support defining `secret` slots. This allows users to configure how a secret plug is fulfilled by a specific provider (e.g., `host-env`).
 
 ## Context
 While SDKs declare their need for a secret via a `plug` in `sdkcraft.yaml`, the actual fulfillment (the "route" or "provider configuration") is defined as a `slot` in the project's `workshop.yaml`. 
@@ -36,12 +36,12 @@ sdks:
    - Locate the internal Go structs responsible for parsing `workshop.yaml` slots (e.g., `internal/workshop/workshop_file.go` and `internal/sdk/sdk.go`).
    - Register the `secret` interface for slots so the parser recognizes it.
    - Ensure the YAML parser correctly unmarshals the `secret` slot attributes:
-     - `provider` (string): The type of provider (e.g., `host-env`, `mock`).
-     - `source` (string): The provider-specific reference (e.g., the name of the environment variable or the mock string).
+     - `provider` (string): The type of provider (e.g., `host-env`).
+     - `source` (string): The provider-specific reference (e.g., the name of the environment variable).
 
 2. **Validation Logic:**
    - Add validation to ensure that if a slot has `interface: secret`, it must have a valid `provider` and `source`.
-   - For the MVP, restrict the allowed `provider` values to `host-env` and `mock`. (Return a validation error if an unsupported provider is specified).
+   - For the MVP, restrict the allowed `provider` value to `host-env`. Return a validation error if an unsupported provider is specified.
 
 3. **Binding/Connection:**
    - Ensure the existing `bind` and `connections` logic in Workshop allows a `secret` plug to connect to a `secret` slot.

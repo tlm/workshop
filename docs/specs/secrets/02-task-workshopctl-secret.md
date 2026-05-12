@@ -22,7 +22,7 @@ SDKs need a way to retrieve the secrets they declared in their `sdkcraft.yaml` a
    - Accept a single positional argument: `<plug-name>`.
    - **Authentication/Context:** Retrieve the SDK context via `c.ensureContext()`. This step implicitly validates the `WORKSHOP_COOKIE` to ensure the caller is an authenticated SDK hook.
    - **Validation:** Verify that the authenticated SDK has actually declared a plug named `<plug-name>` in its `sdkcraft.yaml`, and that the plug's interface type is `secret`. (Return an error to stderr if not).
-   - **Resolution (Mocked for now):** Since the routing engine isn't built yet, temporarily return a mock string (e.g., `"mock-secret-value-for-" + plugName`) to `stdout` to prove the IPC plumbing works.
+   - **Resolution (Stub for now):** Since the routing engine isn't built yet, temporarily return a placeholder string (e.g., `"stub-secret-value-for-" + plugName`) to `stdout` to prove the IPC plumbing works. SEC-005 will replace this stub with the real resolver.
 
 3. **Output Formatting:**
    - Print *only* the secret value to `stdout` upon success.
@@ -30,7 +30,7 @@ SDKs need a way to retrieve the secrets they declared in their `sdkcraft.yaml` a
    - Return a non-zero exit code on failure.
 
 ## Acceptance Criteria
-- [ ] Running `workshopctl get-secret <plug-name>` inside a workshop hook successfully returns the mock secret to stdout.
+- [ ] Running `workshopctl get-secret <plug-name>` inside a workshop hook successfully returns the stub secret to stdout.
 - [ ] Running the command without a valid `WORKSHOP_COOKIE` (outside a hook context) fails securely.
 - [ ] Running the command for a plug that doesn't exist or isn't a `secret` plug returns an error to stderr and exits with code 1.
 - [ ] The command can be executed by a non-root user inside the workshop.

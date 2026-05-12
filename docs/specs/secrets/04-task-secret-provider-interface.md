@@ -5,7 +5,7 @@
 **Status:** Ready for Dev
 
 ## Objective
-Define a generic Go interface for Secret Providers and implement a registry to manage them. This allows the `system` SDK to dynamically route secret requests to different backends (like `host-env` or `mock`) without hardcoding the retrieval logic.
+Define a generic Go interface for Secret Providers and implement a registry to manage them. This allows the `system` SDK to dynamically route secret requests to different backends (like `host-env`) without hardcoding the retrieval logic.
 
 ## Context
 When a `secret` plug is bound to a `secret` slot, Workshop needs to resolve the secret at runtime. The slot definition contains a `provider` (e.g., `host-env`) and a `source` (e.g., `AWS_ACCESS_KEY_ID`). Workshop will use the Provider Registry to look up the correct provider by name and call its `Resolve` method.
@@ -22,17 +22,10 @@ When a `secret` plug is bound to a `secret` slot, Workshop needs to resolve the 
    - Add `Register(p Provider)` and `Get(name string) (Provider, bool)` methods.
    - Initialize a global default registry that Workshop can use at startup.
 
-3. **Implement the `mock` Provider (`internal/secrets/providers/mock.go`):**
-   - Create a simple `mock` provider that implements the `Provider` interface.
-   - `Name()` should return `"mock"`.
-   - `Resolve()` should return a predictable string based on the source (e.g., `"mock-value-for-" + source`).
-   - Register this provider with the global registry in an `init()` function or during daemon startup.
-
 ## Acceptance Criteria
 - [ ] The `internal/secrets` package is created with the `Provider` and `Registry` interfaces.
 - [ ] Standard error types (`ErrSecretNotFound`, `ErrSecretDenied`) are defined.
-- [ ] A `mock` provider is fully implemented and registered.
-- [ ] Unit tests are written for the registry and the `mock` provider.
+- [ ] Unit tests are written for the registry.
 
 ## Out of Scope
 - Implementing the `host-env` provider (this will be a separate task).

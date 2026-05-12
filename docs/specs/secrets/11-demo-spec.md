@@ -69,4 +69,4 @@ aws sts get-caller-identity
 - [ ] Build the `aws-sdk` with the `secret` plug and setup hook.
 - [ ] Create the `secure-aws-project` directory with the `workshop.yaml`.
 - [ ] Ensure the Workshop binary is compiled with all the SEC-001 through SEC-008 features.
-- [ ] Have a valid (or mock) AWS credential ready to export in the terminal.
+- [ ] Have a valid AWS credential ready to export in the terminal.
