@@ -1,6 +1,6 @@
 # Task Spec: Client-to-Daemon Secret Push API
 
-**Task ID:** SEC-007
+**Task ID:** SEC-008
 **Role:** CLI / Backend Go Developer
 **Status:** Ready for Dev
 
@@ -44,5 +44,5 @@ The CLI will resolve these secrets and push them to the daemon. The daemon will 
 - [ ] Unit tests verify that secrets are stripped or ignored during state serialization to disk.
 
 ## Out of Scope
-- Implementing the `host-keychain` provider (deferred to SEC-07).
+- Implementing the `host-keychain` provider (deferred to SEC-007).
 - Delivering secrets automatically as environment variables to hooks (this is pull-based via `workshopctl` for now).

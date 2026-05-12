@@ -249,7 +249,7 @@ Future delivery modes may include:
 - Files mounted into the workshop for the duration of a process.
 - File content written to a temporary path with restricted permissions.
 - Agent sockets or provider sockets.
-- `workshopctl secret get` for hook-time pull-based resolution.
+- `workshopctl get-secret` for hook-time pull-based resolution.
 
 ## Runtime Flow
 
@@ -328,7 +328,7 @@ Workshop must avoid:
   three?
 - How should users inspect missing requirements without exposing sensitive
   provider metadata?
-- Should `workshopctl secret get` be part of the MVP or a later pull-based
+- Should `workshopctl get-secret` be part of the MVP or a later pull-based
   delivery mode?
 
 ## MVP Recommendation

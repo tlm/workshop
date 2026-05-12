@@ -1,8 +1,9 @@
 # Task Spec: Implement `host-keychain` Secret Provider
 
-**Task ID:** SEC-007 (Updated)
+**Task ID:** SEC-007
 **Role:** CLI / Backend Go Developer
 **Status:** Ready for Dev
+**Depends on:** SEC-008
 
 ## Objective
 Introduce a `host-keychain` secret provider that allows the `workshop` CLI to securely retrieve secrets directly from the user's native Linux desktop credential store (e.g., GNOME Keyring or KDE KWallet) using the Secret Service API.
@@ -10,7 +11,7 @@ Introduce a `host-keychain` secret provider that allows the `workshop` CLI to se
 ## Context
 While the `host-env` and `host-file` providers are useful, storing long-lived credentials (like AWS keys or database passwords) in plain text on disk or in environment variables is a security risk. Users typically store these in their OS keychain.
 
-By leveraging the Client-Side Resolution (Push Model) established in `SEC-008`, the `workshop` CLI can query the user's keychain, handle any OS-level prompts, and push the secret to the daemon securely.
+By leveraging the Client-Side Resolution (Push Model) established in `SEC-008`, the `workshop` CLI can query the user's keychain, handle any OS-level prompts, and push the secret to the daemon securely. (Note: SEC-008 is a prerequisite for this task even though it is numbered higher; the file ordering reflects topic grouping rather than execution order.)
 
 Example `workshop.yaml` configuration:
 ```yaml
