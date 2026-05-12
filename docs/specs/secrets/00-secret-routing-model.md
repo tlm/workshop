@@ -46,8 +46,8 @@ The model has four contracts:
   requirement to a provider-backed source.
 - `SecretProvider`: implemented by Workshop or an integration. It resolves a
   route into a value at runtime.
-- `SecretDelivery`: selected by Workshop and the requirement. It describes how
-  the resolved value is exposed to the SDK process.
+- `SecretDelivery`: selected by Workshop. It describes how the resolved value
+  is exposed to the SDK process.
 
 The important separation is:
 
@@ -117,9 +117,6 @@ secret-routes:
     secret: FOO
     provider: host-env
     source: FOO
-    deliver:
-      type: env
-      name: FOO
 ```
 
 ## Contract: SecretRequirement
@@ -132,18 +129,12 @@ Proposed shape:
 secrets:
   - name: FOO
     description: Token used by the SDK to call service X.
-    required: true
-    deliver:
-      type: env
-      name: FOO
 ```
 
 Fields:
 
 - `name`: stable SDK-local name for the requirement.
 - `description`: user-facing explanation of why the SDK wants the secret.
-- `required`: whether the SDK expects to fail or degrade without the secret.
-- `deliver`: supported delivery mode requested by the SDK.
 
 Rules:
 
@@ -152,8 +143,6 @@ Rules:
   `aws.FOO`.
 - SDKs must not declare host-specific provider names, file paths, account IDs,
   or vault paths as requirements.
-- `required: true` does not mean Workshop must block launch. It means the SDK
-  considers the secret necessary for full functionality.
 
 ## Contract: SecretRoute
 
@@ -166,9 +155,6 @@ sdk: aws
 secret: FOO
 provider: host-env
 source: FOO
-deliver:
-  type: env
-  name: FOO
 ```
 
 Fields:
@@ -177,7 +163,6 @@ Fields:
 - `secret`: requirement name declared by the SDK.
 - `provider`: provider type or provider instance name.
 - `source`: provider-specific reference to the secret.
-- `deliver`: optional delivery override, if allowed by the requirement.
 
 Rules:
 
@@ -225,45 +210,47 @@ Later provider candidates:
 `SecretDelivery` describes how Workshop exposes a resolved value to an SDK
 process.
 
-MVP delivery mode:
+The MVP supports a single delivery mode: pull-based resolution via
+`workshopctl get-secret <plug>`. An SDK hook or script asks the daemon for a
+resolved value at the moment it needs one, and the daemon returns the value
+over the authenticated `workshopctl` socket. The SDK is then responsible for
+using the value (for example, by exporting it as an environment variable for
+the duration of the script).
 
-```yaml
-deliver:
-  type: env
-  name: FOO
-```
+Rules for pull delivery:
 
-Rules for environment delivery:
-
-- Workshop injects the value into the target process environment.
-- Workshop should inject only the variables required for that process.
-- Workshop must avoid including injected values in task logs, command logs,
+- Workshop resolves the value only when the SDK explicitly requests it.
+- Workshop must avoid including resolved values in task logs, command logs,
   debug output, or persisted state.
-- The value lifetime is bounded by the target process lifetime unless a
-  provider imposes a shorter lifetime.
+- The value lifetime is bounded by the requesting process unless a provider
+  imposes a shorter lifetime.
 
 Future delivery modes may include:
 
+- Automatic environment variable injection into specific hooks or actions
+  (see `09-future-todos.md`).
 - Files mounted into the workshop for the duration of a process.
 - File content written to a temporary path with restricted permissions.
 - Agent sockets or provider sockets.
-- `workshopctl get-secret` for hook-time pull-based resolution.
+- Native systemd credentials for in-workshop services.
 
 ## Runtime Flow
 
 For a process that supports secret delivery:
 
-1. Workshop identifies the SDKs involved in the process.
-2. Workshop loads each SDK's `SecretRequirement` declarations.
-3. Workshop finds matching `SecretRoute` entries from explicit launch options,
-   local configuration, and persisted route metadata.
-4. Workshop resolves each route through its `SecretProvider`.
-5. Workshop delivers resolved values using the selected `SecretDelivery`.
-6. Workshop starts the target process.
-7. Workshop discards resolved values after delivery.
+1. An SDK hook or script invokes `workshopctl get-secret <plug>`.
+2. Workshop identifies the calling SDK from the `workshopctl` context.
+3. Workshop loads the SDK's `SecretRequirement` for that plug.
+4. Workshop finds the matching `SecretRoute` (the connected slot) from
+   `workshop.yaml` and persisted route metadata.
+5. Workshop resolves the route through its `SecretProvider`.
+6. Workshop returns the resolved value to the caller over the `workshopctl`
+   socket.
+7. Workshop discards the resolved value after delivery.
 
-For the MVP, target processes are expected to be SDK hooks, workshop actions, or
-commands started through `workshop run` and `workshop exec`.
+For the MVP, target processes are expected to be SDK hooks, workshop actions,
+or commands started through `workshop run` and `workshop exec` that
+explicitly call `workshopctl get-secret`.
 
 ## Missing, Denied, and Failed Secrets
 
@@ -319,15 +306,11 @@ Workshop must avoid:
 
 - Which operations should support secret delivery in the first implementation:
   hooks only, actions only, `workshop exec`, or all three?
-- Should `required: true` ever block launch when a route exists but cannot be
-  resolved?
 - Where should local automatic routing live on disk?
 - Should routes be workshop-scoped, project-scoped, user-scoped, or support all
   three?
 - How should users inspect missing requirements without exposing sensitive
   provider metadata?
-- Should `workshopctl get-secret` be part of the MVP or a later pull-based
-  delivery mode?
 
 ## MVP Recommendation
 
@@ -336,7 +319,7 @@ The first implementation should support:
 - SDK-declared secret requirements.
 - User-managed routes stored as metadata.
 - A `host-env` or `mock` provider.
-- Environment variable delivery.
+- Pull-based delivery via `workshopctl get-secret`.
 - Non-blocking `workshop launch` when requirements are unrouted.
 - A way to list declared, routed, and unrouted secrets for a workshop.
 
@@ -346,6 +329,6 @@ The first demo should show:
 2. `workshop launch` succeeds without wiring `FOO`.
 3. Workshop reports `FOO` as unrouted.
 4. The user connects `aws.FOO` to a host source.
-5. A later SDK hook, action, or command receives `FOO` as an environment
-   variable.
+5. A later SDK hook, action, or command retrieves `FOO` via
+   `workshopctl get-secret`.
 6. Workshop does not persist or print the resolved value.
