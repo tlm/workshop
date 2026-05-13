@@ -83,16 +83,8 @@ func run(stdin io.Reader) (stdout, stderr []byte, err error) {
 	}
 
 	cookie := os.Getenv("WORKSHOP_COOKIE")
-
-	// Read the workshop identity token from the cookie file.
-	workshopID := ""
-	if data, err := os.ReadFile(dirs.WorkshopCookiePath); err == nil {
-		workshopID = string(data)
-	}
-
 	return cli.RunWorkshopctl(&client.WorkshopCtlOptions{
-		ContextID:  cookie,
-		WorkshopID: workshopID,
-		Args:       os.Args[1:],
+		ContextID: cookie,
+		Args:      os.Args[1:],
 	}, stdin)
 }

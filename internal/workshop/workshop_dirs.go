@@ -83,11 +83,6 @@ func AptCacheDir(pid, w string) string {
 	return filepath.Join(CacheDir(pid, w), "apt")
 }
 
-// CookiePath returns the host-side path for the workshop identity cookie file.
-func CookiePath(pid, w string) string {
-	return filepath.Join(DataDir(pid, w), "cookie")
-}
-
 func SdkSourcePath(userDataDir string, project Project, w, sk string, source sdk.Source) string {
 	switch source {
 	case sdk.TrySource:

@@ -44,7 +44,6 @@ type workshopHandlers struct {
 
 	restoreUserLookup func()
 	restoreUserEnv    func()
-	restoreBaseDir    string
 }
 
 var _ = check.Suite(&workshopHandlers{})
@@ -75,9 +74,6 @@ var ErrTrigger = errors.New("error out")
 func (s *workshopHandlers) SetUpTest(c *check.C) {
 	var err error
 	ctx := context.WithValue(context.Background(), workshop.ContextUser, "testuser")
-
-	s.restoreBaseDir = dirs.BaseDir
-	dirs.SetRootDir(c.MkDir())
 
 	s.backend, err = fakebackend.New(c.MkDir())
 	c.Assert(err, check.IsNil)
@@ -129,7 +125,6 @@ func (s *workshopHandlers) SetUpTest(c *check.C) {
 func (s *workshopHandlers) TearDownTest(c *check.C) {
 	s.restoreUserEnv()
 	s.restoreUserLookup()
-	dirs.SetRootDir(s.restoreBaseDir)
 }
 
 func (s *workshopHandlers) TestStopPeriodicProgressUpdate(c *check.C) {

@@ -20,9 +20,6 @@ type workshopCtlOptions struct {
 	// which context and handler should be used, etc.)
 	ContextID string `json:"context-id"`
 
-	// WorkshopID is a token that identifies the calling workshop.
-	WorkshopID string `json:"workshop-id,omitempty"`
-
 	// Args contains a list of parameters to use for this invocation.
 	Args []string `json:"args"`
 }
@@ -57,12 +54,6 @@ func v1PostWorkshopCtl(c *Command, r *http.Request, _ *userState) Response {
 	// Ignore missing context error to allow 'workshopctl -h' without a context;
 	// Actual context is validated later by get/set.
 	context, _ := c.d.overlord.HookManager().Context(reqData.ContextID)
-
-	if reqData.WorkshopID != "" {
-		context.Lock()
-		context.Set("workshop-id", reqData.WorkshopID)
-		context.Unlock()
-	}
 
 	if reqData.Stdin != nil {
 		context.Lock()

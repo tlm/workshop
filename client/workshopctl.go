@@ -30,9 +30,6 @@ type WorkshopCtlOptions struct {
 	// which context and handler should be used, etc.)
 	ContextID string `json:"context-id"`
 
-	// WorkshopID is a token that identifies the calling workshop.
-	WorkshopID string `json:"workshop-id,omitempty"`
-
 	// Args contains a list of parameters to use for this invocation.
 	Args []string `json:"args"`
 }

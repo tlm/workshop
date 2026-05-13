@@ -3,13 +3,11 @@ package workshopstate
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"strings"
 	"syscall"
 	"time"
 
-	"github.com/canonical/x-go/randutil"
 	"gopkg.in/tomb.v2"
 
 	"github.com/canonical/workshop/internal/dirs"
@@ -161,21 +159,6 @@ func (m *WorkshopManager) doCreateWorkshopStorage(task *state.Task, tomb *tomb.T
 	}
 	if err = sys.ChownPath(aptCache, uid, gid); err != nil {
 		return &os.PathError{Op: "chown", Path: aptCache, Err: err}
-	}
-
-	// Generate a per-workshop identity cookie if one doesn't already exist.
-	cookiePath := workshop.CookiePath(prj.ProjectId, w)
-	if _, err := os.Stat(cookiePath); errors.Is(err, os.ErrNotExist) {
-		if err := os.MkdirAll(workshop.DataDir(prj.ProjectId, w), 0755); err != nil {
-			return err
-		}
-		token, err := randutil.CryptoToken(32)
-		if err != nil {
-			return fmt.Errorf("cannot generate workshop cookie: %w", err)
-		}
-		if err := os.WriteFile(cookiePath, []byte(token), 0444); err != nil {
-			return err
-		}
 	}
 
 	return nil

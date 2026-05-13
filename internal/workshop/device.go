@@ -125,12 +125,6 @@ func defaultDevices(pid, w string) ([]Mount, []ProxyEntry) {
 		Type:  HostWorkshop,
 		What:  AptCacheDir(pid, w),
 		Where: dirs.AptCacheDir,
-	}, {
-		Name:     "workshop.cookie",
-		Type:     HostWorkshop,
-		What:     CookiePath(pid, w),
-		Where:    dirs.WorkshopCookiePath,
-		ReadOnly: true,
 	}}
 
 	socketHost := dirs.SocketPath + ".untrusted"
