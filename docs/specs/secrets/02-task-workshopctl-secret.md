@@ -2,7 +2,7 @@
 
 **Task ID:** SEC-002
 **Role:** Backend Go Developer
-**Status:** Ready for Dev
+**Status:** In Progress — plug-declaration validation deferred to SEC-001
 
 ## Objective
 Add a `get-secret` command to `workshopctl` that allows an SDK running inside the workshop to request the value of a declared `secret` plug.
@@ -30,8 +30,38 @@ SDKs need a way to retrieve the secrets they declared in their `sdkcraft.yaml` a
    - Return a non-zero exit code on failure.
 
 ## Acceptance Criteria
-- [ ] Running `workshopctl get-secret <plug-name>` inside a workshop hook successfully returns the stub secret to stdout.
-- [ ] Running the command without a valid `WORKSHOP_COOKIE` (outside a hook context) fails securely.
+- [x] Running `workshopctl get-secret <plug-name>` inside a workshop hook successfully returns the stub secret to stdout.
+- [x] Running the command without a valid `WORKSHOP_COOKIE` (outside a hook context) fails securely.
 - [ ] Running the command for a plug that doesn't exist or isn't a `secret` plug returns an error to stderr and exits with code 1.
-- [ ] The command can be executed by a non-root user inside the workshop.
-- [ ] Unit tests are added in `internal/overlord/hookstate/ctlcmd/secret_test.go`.
+- [x] The command can be executed by a non-root user inside the workshop.
+- [x] Unit tests are added in `internal/overlord/hookstate/ctlcmd/secret_test.go`.
+
+## Implementation Status
+
+Landed:
+
+- `internal/overlord/hookstate/ctlcmd/secret.go` registers a
+  `get-secret` subcommand backed by `getSecretCommand`. It takes a
+  single required `<plug-name>` positional, calls `c.ensureContext()`
+  to enforce the hook-context authentication boundary, and writes
+  `stub-secret-value-for-<plug-name>` to stdout with no trailing
+  newline.
+- `internal/overlord/hookstate/ctlcmd/ctlcmd.go` adds `get-secret` to
+  `nonRootAllowed` so SDK hooks running as a non-root user can invoke
+  it without sudo.
+- `internal/overlord/hookstate/ctlcmd/secret_test.go` covers: stub
+  success path, the no-trailing-newline output contract, missing hook
+  context, the required positional argument, and non-root execution.
+
+Deferred:
+
+- Validation that the calling SDK has declared a plug named
+  `<plug-name>` with `interface: secret`. This depends on SEC-001
+  landing the `secret` interface in the Go SDK model so the lookup
+  has something to query. Once SEC-001 is in, `Execute` should
+  retrieve the SDK from the hook context, look up the plug in its
+  parsed `sdkcraft.yaml`, and reject the call with a stderr error
+  and non-zero exit code if the plug is missing or not a `secret`
+  plug.
+- Replacing the stub return value with a real resolver call. This is
+  owned by SEC-005 and is explicitly out of scope here.

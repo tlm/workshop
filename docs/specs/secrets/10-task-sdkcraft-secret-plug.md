@@ -2,7 +2,7 @@
 
 **Task ID:** SEC-010
 **Role:** Python Developer
-**Status:** Ready for Dev
+**Status:** Complete
 
 ## Objective
 Update the `sdkcraft` CLI tool to recognize and validate the new `secret` plug interface in `sdkcraft.yaml`.
