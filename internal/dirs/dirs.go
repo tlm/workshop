@@ -35,6 +35,9 @@ var (
 	// Directory for actions inside workshop
 	WorkshopActionsDir = filepath.Join(WorkshopRunDir, "actions")
 
+	// Path to the workshop identity cookie file inside the container
+	WorkshopCookiePath = filepath.Join(WorkshopRunDir, "cookie")
+
 	// Cache directory for deb packages
 	AptCacheDir = "/var/cache/apt/archives"
 )
