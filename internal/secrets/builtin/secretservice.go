@@ -6,23 +6,28 @@ package builtin
 import (
 	"context"
 	"fmt"
+	"os"
+	"runtime"
+	"strconv"
+	"syscall"
 
 	"github.com/godbus/dbus/v5"
+
+	"github.com/canonical/workshop/internal/osutil"
+	"github.com/canonical/workshop/internal/workshop"
 )
 
 const (
 	secretServiceProviderName = "secret-service"
 
-	dbusServiceName    = "org.freedesktop.secrets"
-	dbusServicePath    = "/org/freedesktop/secrets"
-	dbusServiceIface   = "org.freedesktop.Secret.Service"
-	dbusSessionIface   = "org.freedesktop.Secret.Session"
-	dbusItemIface      = "org.freedesktop.Secret.Item"
-	dbusPropertiesIface = "org.freedesktop.DBus.Properties"
+	dbusServiceName  = "org.freedesktop.secrets"
+	dbusServicePath  = "/org/freedesktop/secrets"
+	dbusServiceIface = "org.freedesktop.Secret.Service"
+	dbusSessionIface = "org.freedesktop.Secret.Session"
 )
 
 // connOpener abstracts D-Bus session bus connection for testability.
-type connOpener func() (*dbus.Conn, error)
+type connOpener func(uid string) (*dbus.Conn, error)
 
 type secretServiceProvider struct {
 	openConn connOpener
@@ -33,15 +38,23 @@ func (p *secretServiceProvider) Name() string {
 }
 
 func (p *secretServiceProvider) Resolve(ctx context.Context, source string) (string, error) {
+	username, ok := ctx.Value(workshop.ContextUser).(string)
+	if !ok {
+		return "", fmt.Errorf("context key %s not found", workshop.ContextUser)
+	}
+
+	usr, err := osutil.UserLookup(username)
+	if err != nil {
+		return "", fmt.Errorf("cannot look up user %q: %w", username, err)
+	}
+
 	open := p.openConn
 	if open == nil {
-		open = func() (*dbus.Conn, error) {
-			return dbus.ConnectSessionBus()
-		}
+		open = connectSessionBus
 	}
-	conn, err := open()
+	conn, err := open(usr.Uid)
 	if err != nil {
-		return "", fmt.Errorf("cannot connect to session bus: %w", err)
+		return "", fmt.Errorf("cannot connect to session bus for user %q: %w", username, err)
 	}
 	defer conn.Close()
 
@@ -110,6 +123,34 @@ func (p *secretServiceProvider) Resolve(ctx context.Context, source string) (str
 	}
 
 	return string(s.Value), nil
+}
+
+// connectSessionBus connects to the D-Bus session bus for the given UID.
+// When running as root, the current thread's effective UID is temporarily
+// switched to the target user so the bus daemon accepts the connection.
+func connectSessionBus(uid string) (*dbus.Conn, error) {
+	addr := fmt.Sprintf("unix:path=/run/user/%s/bus", uid)
+
+	targetUID, err := strconv.Atoi(uid)
+	if err != nil {
+		return nil, fmt.Errorf("invalid uid %q: %w", uid, err)
+	}
+
+	if os.Geteuid() == 0 && targetUID != 0 {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		// Drop effective UID to target, keep saved UID as 0 for restore.
+		if _, _, errno := syscall.RawSyscall(syscall.SYS_SETRESUID,
+			uintptr(targetUID), uintptr(targetUID), 0); errno != 0 {
+			return nil, fmt.Errorf("cannot set effective uid to %d: %s", targetUID, errno)
+		}
+		defer func() {
+			syscall.RawSyscall(syscall.SYS_SETRESUID, 0, 0, 0)
+		}()
+	}
+
+	return dbus.Connect(addr, dbus.WithAuth(dbus.AuthExternal(uid)))
 }
 
 func init() {

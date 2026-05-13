@@ -7,25 +7,43 @@ package builtin_test
 
 import (
 	"context"
+	"os"
+	"os/user"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 	"gopkg.in/check.v1"
 
 	"github.com/canonical/workshop/internal/secrets/builtin"
+	"github.com/canonical/workshop/internal/workshop"
 )
 
 type SecretServiceIntegrationSuite struct {
 	conn        *dbus.Conn
 	sessionPath dbus.ObjectPath
+	ctx         context.Context
 }
 
 var _ = check.Suite(&SecretServiceIntegrationSuite{})
 
 func (s *SecretServiceIntegrationSuite) SetUpSuite(c *check.C) {
-	conn, err := dbus.ConnectSessionBus()
-	if err != nil {
-		c.Skip("session bus not available: " + err.Error())
+	// When running under sudo, use SUDO_USER so we connect to the
+	// real user's session bus rather than root's.
+	username := os.Getenv("SUDO_USER")
+	if username == "" {
+		cur, err := user.Current()
+		if err != nil {
+			c.Fatal("cannot determine current user: " + err.Error())
+		}
+		username = cur.Username
 	}
+
+	usr, err := user.Lookup(username)
+	if err != nil {
+		c.Fatal("cannot look up user: " + err.Error())
+	}
+	conn, err := builtin.ConnectSessionBus(usr.Uid)
+	c.Assert(err, check.IsNil)
 
 	// Verify the Secret Service is reachable.
 	svc := conn.Object("org.freedesktop.secrets", "/org/freedesktop/secrets")
@@ -33,13 +51,11 @@ func (s *SecretServiceIntegrationSuite) SetUpSuite(c *check.C) {
 	var sessionPath dbus.ObjectPath
 	err = svc.Call("org.freedesktop.Secret.Service.OpenSession", 0,
 		"plain", dbus.MakeVariant("")).Store(&discard, &sessionPath)
-	if err != nil {
-		conn.Close()
-		c.Skip("secret service not available: " + err.Error())
-	}
+	c.Assert(err, check.IsNil)
 
 	s.conn = conn
 	s.sessionPath = sessionPath
+	s.ctx = context.WithValue(context.Background(), workshop.ContextUser, username)
 }
 
 func (s *SecretServiceIntegrationSuite) TearDownSuite(c *check.C) {
@@ -98,11 +114,12 @@ func (s *SecretServiceIntegrationSuite) deleteItem(c *check.C, path dbus.ObjectP
 func (s *SecretServiceIntegrationSuite) TestResolveExistingSecret(c *check.C) {
 	itemPath := s.createSessionItem(c, "integration-key", "s3cr3t-value")
 	defer s.deleteItem(c, itemPath)
+	time.Sleep(time.Minute)
 
 	p, ok := builtin.GetProvider("secret-service")
 	c.Assert(ok, check.Equals, true)
 
-	val, err := p.Resolve(context.Background(), "integration-key")
+	val, err := p.Resolve(s.ctx, "integration-key")
 	c.Assert(err, check.IsNil)
 	c.Assert(val, check.Equals, "s3cr3t-value")
 }
@@ -111,6 +128,6 @@ func (s *SecretServiceIntegrationSuite) TestResolveNotFound(c *check.C) {
 	p, ok := builtin.GetProvider("secret-service")
 	c.Assert(ok, check.Equals, true)
 
-	_, err := p.Resolve(context.Background(), "no-such-secret-key-ever")
+	_, err := p.Resolve(s.ctx, "no-such-secret-key-ever")
 	c.Assert(err, check.ErrorMatches, `secret "no-such-secret-key-ever" not found in secret service`)
 }
