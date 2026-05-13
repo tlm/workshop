@@ -29,6 +29,7 @@ import (
 	"github.com/canonical/workshop/internal/sdk"
 	"github.com/canonical/workshop/internal/secrets"
 	secretsbuiltin "github.com/canonical/workshop/internal/secrets/builtin"
+	"github.com/canonical/workshop/internal/workshop"
 )
 
 const secretSummary = `allows SDKs to declare and consume secrets from the Workshop environment`
@@ -53,7 +54,9 @@ const secretBaseDeclarationPlugs = `
 
 var knownSecretPlugAttributes = []string{"name"}
 var knownSecretSlotAttributes = []string{"provider", "source"}
-var allowedSecretProviders = []string{"host-env"}
+
+// TODO: replace with registry
+var allowedSecretProviders = []string{"secret-service"}
 
 type secretInterface struct{}
 
@@ -155,7 +158,7 @@ func (iface *secretInterface) AutoConnect(
 // to be accepted; otherwise the connection is rejected so that it can be
 // retried once the provider is available or the source is corrected.
 func (iface *secretInterface) MountConnectedPlug(
-	_ *lxd_device.Specification,
+	spec *lxd_device.Specification,
 	_ *interfaces.ConnectedPlug,
 	slot *interfaces.ConnectedSlot,
 ) error {
@@ -184,7 +187,9 @@ func (iface *secretInterface) MountConnectedPlug(
 		)
 	}
 
-	if _, err := prov.Resolve(context.Background(), source); err != nil {
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, workshop.ContextUser, spec.User.Username)
+	if _, err := prov.Resolve(ctx, source); err != nil {
 		return fmt.Errorf(
 			"secret provider %q cannot resolve source %q: %w",
 			providerName, source, err,
