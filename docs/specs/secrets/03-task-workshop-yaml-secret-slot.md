@@ -2,7 +2,7 @@
 
 **Task ID:** SEC-003
 **Role:** Backend Go Developer
-**Status:** Ready for Dev
+**Status:** Done
 
 ## Objective
 Extend the `workshop.yaml` parser and internal model to support defining `secret` slots. This allows users to configure how a secret plug is fulfilled by a specific provider (e.g., `host-env`).

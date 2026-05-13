@@ -357,7 +357,59 @@ They have no attributes.
 The only SSH interface slot is :samp:`system:ssh-agent`.
 
 
-Tunnel interface
+Secret interface
+~~~~~~~~~~~~~~~~
+
+.. TODO: expand this section once secret delivery is fully implemented.
+.. See docs/specs/secrets/ for the routing model.
+
+.. @artefact secret interface
+
+Secret interface plugs declare a named secret that an SDK can consume.
+They are described by the following attributes:
+
+.. list-table::
+   :header-rows: 1
+   :width: 95
+   :widths: 2 1 6
+
+   * - Key
+     - Value
+     - Description
+
+   * - :samp:`name` (required)
+     - string
+     - A stable identifier for the secret requirement,
+       such as :samp:`GITHUB_TOKEN`.
+
+Secret interface slots are defined on the :ref:`system SDK <ref_system_sdk>`
+and describe how a secret is fulfilled.
+They are described by the following attributes:
+
+.. list-table::
+   :header-rows: 1
+   :width: 95
+   :widths: 2 1 6
+
+   * - Key
+     - Value
+     - Description
+
+   * - :samp:`provider` (required)
+     - string
+     - The secret provider type.
+       Currently the only supported value is :samp:`host-env`.
+
+   * - :samp:`source` (required)
+     - string
+     - The provider-specific reference to the secret,
+       such as the name of a host environment variable.
+
+Secret plugs and slots must be connected manually;
+they are never auto-connected.
+
+
+
 ~~~~~~~~~~~~~~~~
 
 .. @artefact tunnel interface

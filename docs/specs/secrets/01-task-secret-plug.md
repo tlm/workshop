@@ -2,7 +2,7 @@
 
 **Task ID:** SEC-001
 **Role:** Backend Go Developer
-**Status:** Ready for Dev
+**Status:** Done
 
 ## Objective
 Extend the Workshop SDK definition model to support a new plug interface named `secret`. This task is strictly limited to parsing, validating, and representing the `secret` plug in memory. It does *not* include the actual routing or delivery of the secret.

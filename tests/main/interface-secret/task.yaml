@@ -1,0 +1,12 @@
+summary: Check secret interface scenarios
+# TODO: implement end-to-end tests for the secret interface
+# See docs/specs/secrets/ for the full routing model.
+# At minimum, cover:
+#   - secret plug cannot be auto-connected
+#   - secret plug can be connected and disconnected manually
+#   - connected slot with provider=host-env resolves the correct env var
+#   - workshopctl get-secret returns the value when connected
+#   - workshopctl get-secret fails gracefully when unconnected
+execute: |
+  echo "secret interface tests are not yet implemented"
+  exit 0
