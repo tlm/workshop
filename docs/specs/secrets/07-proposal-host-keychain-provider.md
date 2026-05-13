@@ -2,7 +2,7 @@
 
 **Task ID:** SEC-007
 **Role:** CLI / Backend Go Developer
-**Status:** Ready for Dev
+**Status:** Done
 **Depends on:** SEC-008
 
 ## Objective
