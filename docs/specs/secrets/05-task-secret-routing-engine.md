@@ -22,8 +22,8 @@ This task implements the core engine that connects these pieces. When an SDK cal
 1. **Interface Implementation (`internal/interfaces/builtin/secret.go`):**
    - Implement the standard Workshop interface backend for `secret`.
    - **Sanitize/Validate:** Ensure plugs and slots have the correct attributes (leveraging work from SEC-001 and SEC-003).
-   - **Connect (`MountConnectedPlug`):** Implement the `MountConnectedPlug` method. This method must verify that the requested secret actually exists in the daemon's memory store (via the provider registry). If it does not exist, return an error so the connection is marked as failed/waiting.
-   - **Disconnect Cleanup:** When a `secret` interface is disconnected (e.g., via `workshop disconnect`), the interface backend must instruct the memory provider/registry to purge the cached secret value for that specific connection to maintain security hygiene.
+   - **Connect (`MountConnectedPlug`):** Implement the `MountConnectedPlug` method. This method must verify that the slot's provider exists in the registry and that the `source` is resolvable. If the provider is missing or the `source` is invalid, return an error so the connection is marked as failed/waiting.
+   - **Disconnect Cleanup:** No-op for v1. The resolver is lazy and no provider caches its output, so there is nothing to purge.
 
 2. **The Resolver Service (`internal/secrets/resolver.go`):**
    - Create a `Resolver` struct or function (e.g., `ResolvePlug(ctx, workshopState, sdkName, plugName) (string, error)`).
@@ -96,18 +96,9 @@ Landed:
 
 Deferred:
 
-- **Disconnect cache purge.** The acceptance criterion assumes a
-  daemon-side cache of resolved secret values that the interface
-  backend would invalidate on disconnect. The resolver is currently
-  lazy — every `get-secret` calls `provider.Resolve` on demand — and
-  no provider in tree caches its output, so there is nothing to
-  purge. Once a caching provider lands (or the architecture moves to
-  eager resolution at connect time), an optional `Purger` extension
-  on `secrets.Provider` plus a disconnect hook on `secretInterface`
-  can be added. Until then this criterion is intentionally unticked.
 - **End-to-end `workshop launch` and `workshopctl get-secret`
   acceptance.** The wiring is in place, but exercising it
   end-to-end requires a registered `host-env` (or other) provider,
-  which is owned by SEC-012. Once SEC-012 lands and registers a
-  provider in the `secrets/builtin` registry, these two criteria
-  can be verified and ticked without further code changes here.
+  which is owned by SEC-008. Once SEC-008 lands and registers the
+  `host-env` provider in the `secrets/builtin` registry, these two
+  criteria can be verified and ticked without further code changes here.

@@ -9,6 +9,7 @@ import (
 	"github.com/canonical/workshop/internal/overlord/hookstate"
 	"github.com/canonical/workshop/internal/overlord/hookstate/ctlcmd"
 	"github.com/canonical/workshop/internal/secrets"
+	secretsbuiltin "github.com/canonical/workshop/internal/secrets/builtin"
 	"github.com/canonical/workshop/internal/workshop"
 )
 
@@ -120,8 +121,7 @@ func injectSecretResolver(
 	return nil
 }
 
-// getSecretProvider looks up a secret provider by name. It is a stub
-// until the host-env provider is implemented.
-func getSecretProvider(name string) (secrets.Provider, bool) {
-	return nil, false
-}
+// getSecretProvider looks up a secret provider by name in the builtin
+// registry. It is declared as a variable so tests can swap it for a
+// fake without touching the global registry.
+var getSecretProvider secrets.ProviderLookup = secretsbuiltin.GetProvider
