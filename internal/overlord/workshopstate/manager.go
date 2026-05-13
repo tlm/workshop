@@ -38,6 +38,7 @@ func New(st *state.State, runner *state.TaskRunner) *WorkshopManager {
 	runner.AddHandler("stash-workshop", OnDo(manager.doStashWorkshop), OnUndo(manager.undoStashWorkshop))
 	runner.AddHandler("create-state-storage", OnDo(manager.doCreateStateStorage), OnUndo(manager.doRemoveStateStorage))
 	runner.AddHandler("remove-state-storage", OnDo(manager.doRemoveStateStorage), nil)
+	runner.AddHandler("install-workshop-cookie", OnDo(manager.doInstallWorkshopCookie), OnUndo(manager.undoInstallWorkshopCookie))
 
 	return manager
 }

@@ -181,6 +181,9 @@ func launch(st *state.State, project workshop.Project, manifest Manifest) *state
 	create := launchWorkshop(st, manifest.File)
 	addTaskSet(create)
 
+	cookie := st.NewTask("install-workshop-cookie", fmt.Sprintf("Install %q workshop cookie", manifest.File.Name))
+	addTaskSet(state.NewTaskSet(cookie))
+
 	start := startWorkshop(st, manifest.File.Name)
 	addTaskSet(start)
 
@@ -457,6 +460,9 @@ func refresh(st *state.State, project workshop.Project, plan *refreshPlan, file 
 
 	rebuild := rebuildWorkshop(st, file, plan.Intact())
 	addTaskSet(rebuild)
+
+	cookie := st.NewTask("install-workshop-cookie", fmt.Sprintf("Install %q workshop cookie", file.Name))
+	addTaskSet(state.NewTaskSet(cookie))
 
 	// Reinstall intact SDKs. The workshop definition can change plugs and
 	// slots, and SDKs need to be mounted after restoring a snapshot.

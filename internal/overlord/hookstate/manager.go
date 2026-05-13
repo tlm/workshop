@@ -87,20 +87,25 @@ func (w *HookManager) Ensure() error {
 	return nil
 }
 
-func (m *HookManager) ephemeralContext(cookieID string) (context *Context, err error) {
-	var contexts map[string]string
+func (m *HookManager) ephemeralContext(cookieID string) (*Context, error) {
 	m.state.Lock()
 	defer m.state.Unlock()
-	err = m.state.Get("workshop-cookies", &contexts)
+
+	cookies, err := WorkshopCookies(m.state)
 	if err != nil {
-		return nil, fmt.Errorf("cannot get workshop cookies: %v", err)
+		return nil, err
 	}
-	if _, ok := contexts[cookieID]; ok {
-		// create new ephemeral context
-		context, err = NewContext(nil, m.state, &HookSetup{}, nil, cookieID)
-		return context, err
+	cookie, ok := cookies[cookieID]
+	if !ok {
+		return nil, fmt.Errorf("invalid workshop cookie requested")
 	}
-	return nil, fmt.Errorf("invalid workshop cookie requested")
+
+	ctx, err := NewContext(nil, m.state, &HookSetup{}, nil, cookieID)
+	if err != nil {
+		return nil, err
+	}
+	ctx.cookie = &cookie
+	return ctx, nil
 }
 
 // Context obtains the context for the given cookie ID.

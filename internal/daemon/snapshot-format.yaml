@@ -6,6 +6,9 @@
 # backend-specific manner.
 system:
   files:
+    - drwxr-xr-x etc
+    - drwxr-xr-x etc/profile.d
+    - -rw-r--r-- etc/profile.d/workshop-cookie.sh
     - drwxr-xr-x var
     - drwxr-xr-x var/lib
     - drwxr-xr-x var/lib/workshop
@@ -14,13 +17,17 @@ system:
     - Lrwxrwxrwx var/lib/workshop/sdk/system
   tasks:
     create-workshop: 1
+    install-workshop-cookie: 1
     start-workshop: 1
     install-sdk: 1
     run-hook: 1
-  fs-calls: 4
+  fs-calls: 5
   exec-calls: []
 test-sdk-3:
   files:
+    - drwxr-xr-x etc
+    - drwxr-xr-x etc/profile.d
+    - -rw-r--r-- etc/profile.d/workshop-cookie.sh
     - drwxr-xr-x var
     - drwxr-xr-x var/lib
     - drwxr-xr-x var/lib/workshop
@@ -30,14 +37,18 @@ test-sdk-3:
     - Lrwxrwxrwx var/lib/workshop/sdk/test-sdk-3
   tasks:
     create-workshop: 1
+    install-workshop-cookie: 1
     start-workshop: 1
     install-sdk: 2
     run-hook: 2
     snapshot-sdk: 1
-  fs-calls: 7
+  fs-calls: 8
   exec-calls: []
 test-sdk-2:
   files:
+    - drwxr-xr-x etc
+    - drwxr-xr-x etc/profile.d
+    - -rw-r--r-- etc/profile.d/workshop-cookie.sh
     - drwxr-xr-x var
     - drwxr-xr-x var/lib
     - drwxr-xr-x var/lib/workshop
@@ -48,15 +59,19 @@ test-sdk-2:
     - Lrwxrwxrwx var/lib/workshop/sdk/test-sdk-3
   tasks:
     create-workshop: 1
+    install-workshop-cookie: 1
     start-workshop: 1
     install-sdk: 3
     run-hook: 3
     snapshot-sdk: 2
-  fs-calls: 10
+  fs-calls: 11
   exec-calls:
     - ["sudo", "--user=#0", "--group=#0", "--preserve-env=SDK", "--preserve-env=WORKSHOP_COOKIE", "--", "bash", "-l", "-c", 'exec -- "$0" "$@"', "bash", "-o", "errexit", "-o", "pipefail", "/var/lib/workshop/sdk/test-sdk-2/sdk/hooks/setup-base"]
 test-sdk:
   files:
+    - drwxr-xr-x etc
+    - drwxr-xr-x etc/profile.d
+    - -rw-r--r-- etc/profile.d/workshop-cookie.sh
     - drwxr-xr-x var
     - drwxr-xr-x var/lib
     - drwxr-xr-x var/lib/workshop
@@ -68,16 +83,20 @@ test-sdk:
     - Lrwxrwxrwx var/lib/workshop/sdk/test-sdk-3
   tasks:
     create-workshop: 1
+    install-workshop-cookie: 1
     start-workshop: 1
     install-sdk: 4
     run-hook: 4
     snapshot-sdk: 3
-  fs-calls: 13
+  fs-calls: 14
   exec-calls:
     - ["sudo", "--user=#0", "--group=#0", "--preserve-env=SDK", "--preserve-env=WORKSHOP_COOKIE", "--", "bash", "-l", "-c", 'exec -- "$0" "$@"', "bash", "-o", "errexit", "-o", "pipefail", "/var/lib/workshop/sdk/test-sdk-2/sdk/hooks/setup-base"]
     - ["sudo", "--user=#0", "--group=#0", "--preserve-env=SDK", "--preserve-env=WORKSHOP_COOKIE", "--", "bash", "-l", "-c", 'exec -- "$0" "$@"', "bash", "-o", "errexit", "-o", "pipefail", "/var/lib/workshop/sdk/test-sdk/sdk/hooks/setup-base"]
 sketch:
   files:
+    - drwxr-xr-x etc
+    - drwxr-xr-x etc/profile.d
+    - -rw-r--r-- etc/profile.d/workshop-cookie.sh
     - drwxr-xr-x var
     - drwxr-xr-x var/lib
     - drwxr-xr-x var/lib/workshop
@@ -90,6 +109,7 @@ sketch:
     - Lrwxrwxrwx var/lib/workshop/sdk/test-sdk-3
   tasks:
     rebuild-workshop: 1
+    install-workshop-cookie: 1
     start-workshop: 1
     install-sdk: 5
     run-hook: 1

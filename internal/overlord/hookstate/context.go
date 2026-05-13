@@ -43,6 +43,7 @@ type Context struct {
 	setup   *HookSetup
 	id      string
 	handler Handler
+	cookie  *WorkshopCookie
 
 	cache  map[any]any
 	onDone []func() error
@@ -98,6 +99,13 @@ func (c *Context) Timeout() time.Duration {
 // ID returns the ID of the context.
 func (c *Context) ID() string {
 	return c.id
+}
+
+// Cookie returns the workshop cookie associated with this context, or nil if
+// the context originated from a hook task rather than a long-lived workshop
+// cookie.
+func (c *Context) Cookie() *WorkshopCookie {
+	return c.cookie
 }
 
 // Handler returns the handler for this context

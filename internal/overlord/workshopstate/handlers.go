@@ -3,7 +3,9 @@ package workshopstate
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"strings"
 	"syscall"
 	"time"
 
@@ -14,11 +16,16 @@ import (
 	"github.com/canonical/workshop/internal/osutil"
 	"github.com/canonical/workshop/internal/osutil/sys"
 	. "github.com/canonical/workshop/internal/overlord/handlersetup"
+	"github.com/canonical/workshop/internal/overlord/hookstate"
 	"github.com/canonical/workshop/internal/overlord/state"
 	"github.com/canonical/workshop/internal/progress"
 	"github.com/canonical/workshop/internal/revert"
 	"github.com/canonical/workshop/internal/workshop"
 )
+
+// WorkshopCookieScript is the path inside the workshop where the long-lived
+// WORKSHOP_COOKIE env var is exported for interactive shells.
+const WorkshopCookieScript = "/etc/profile.d/workshop-cookie.sh"
 
 var StopLogInterval = 30 * time.Second
 
@@ -380,7 +387,115 @@ func (m *WorkshopManager) doRemoveWorkshop(task *state.Task, tomb *tomb.Tomb) er
 	ctx, cancel := BackendContext(tomb, user, prj.ProjectId)
 	defer cancel()
 
-	return m.backend.RemoveWorkshop(ctx, w)
+	if err := m.backend.RemoveWorkshop(ctx, w); err != nil {
+		return err
+	}
+
+	st := task.State()
+	st.Lock()
+	defer st.Unlock()
+	if err := hookstate.RemoveWorkshopCookies(st, prj.ProjectId, w); err != nil {
+		task.Logf("cannot remove %q workshop cookies: %v", w, err)
+	}
+	return nil
+}
+
+// doInstallWorkshopCookie registers a long-lived workshop cookie in state and
+// writes it into the workshop's /etc/profile.d so interactive shells inside
+// the workshop can authenticate to workshopd via workshopctl.
+func (m *WorkshopManager) doInstallWorkshopCookie(task *state.Task, tomb *tomb.Tomb) error {
+	user, prj, w, err := UserProjectWorkshop(task)
+	if err != nil {
+		return err
+	}
+
+	st := task.State()
+
+	st.Lock()
+	cookieID, err := hookstate.AddWorkshopCookie(st, hookstate.WorkshopCookie{
+		Project:  *prj,
+		Workshop: w,
+		User:     user,
+	})
+	st.Unlock()
+	if err != nil {
+		return fmt.Errorf("cannot register workshop cookie: %w", err)
+	}
+
+	rev := revert.New()
+	defer rev.Fail()
+	rev.Add(func() {
+		st.Lock()
+		defer st.Unlock()
+		if cleanupErr := hookstate.RemoveWorkshopCookies(st, prj.ProjectId, w); cleanupErr != nil {
+			task.Logf("cannot remove %q workshop cookie on cleanup: %v", w, cleanupErr)
+		}
+	})
+
+	ctx, cancel := BackendContext(tomb, user, prj.ProjectId)
+	defer cancel()
+
+	if err := writeWorkshopCookieScript(ctx, m.backend, w, cookieID); err != nil {
+		return fmt.Errorf("cannot install workshop cookie: %w", err)
+	}
+
+	rev.Success()
+	return nil
+}
+
+// undoInstallWorkshopCookie removes the cookie from state. The workshop
+// filesystem is typically already gone by the time undo runs (because
+// remove-workshop has been undone), so a best-effort filesystem cleanup is
+// good enough.
+func (m *WorkshopManager) undoInstallWorkshopCookie(task *state.Task, tomb *tomb.Tomb) error {
+	user, prj, w, err := UserProjectWorkshop(task)
+	if err != nil {
+		return err
+	}
+
+	st := task.State()
+	st.Lock()
+	cleanupErr := hookstate.RemoveWorkshopCookies(st, prj.ProjectId, w)
+	st.Unlock()
+	if cleanupErr != nil {
+		task.State().Lock()
+		task.Logf("cannot remove %q workshop cookie on undo: %v", w, cleanupErr)
+		task.State().Unlock()
+	}
+
+	ctx, cancel := BackendContext(tomb, user, prj.ProjectId)
+	defer cancel()
+	_ = removeWorkshopCookieScript(ctx, m.backend, w)
+	return nil
+}
+
+func writeWorkshopCookieScript(ctx context.Context, backend workshop.Backend, w, cookieID string) error {
+	fs, err := backend.WorkshopFs(ctx, w)
+	if err != nil {
+		return err
+	}
+	defer fs.Close()
+
+	if err := fs.MkdirAll("/etc/profile.d", 0755); err != nil {
+		return err
+	}
+	content := "export WORKSHOP_COOKIE=" + shellQuote(cookieID) + "\n"
+	return fs.AtomicWriteTo(strings.NewReader(content), WorkshopCookieScript, 0644)
+}
+
+func removeWorkshopCookieScript(ctx context.Context, backend workshop.Backend, w string) error {
+	fs, err := backend.WorkshopFs(ctx, w)
+	if err != nil {
+		return err
+	}
+	defer fs.Close()
+	return fs.RemoveIfExists(WorkshopCookieScript)
+}
+
+// shellQuote single-quotes a string for use in a POSIX shell `export` line.
+// The cookie is a hex token so this is belt-and-braces.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 func (m *WorkshopManager) doRemoveWorkshopStash(task *state.Task, tomb *tomb.Tomb) error {
