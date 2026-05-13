@@ -479,7 +479,7 @@ func writeWorkshopCookieScript(ctx context.Context, backend workshop.Backend, w,
 	if err := fs.MkdirAll("/etc/profile.d", 0755); err != nil {
 		return err
 	}
-	content := "export WORKSHOP_COOKIE=" + shellQuote(cookieID) + "\n"
+	content := ": \"${WORKSHOP_COOKIE:=" + shellQuote(cookieID) + "}\"\nexport WORKSHOP_COOKIE\n"
 	return fs.AtomicWriteTo(strings.NewReader(content), WorkshopCookieScript, 0644)
 }
 
