@@ -187,10 +187,91 @@ func (m *InterfaceManager) connectAuto(task *state.Task, wp *workshop.Workshop, 
 		return err
 	}
 
+	// Retrieve previously stored connections from the disconnect phase
+	var prevConns map[string]map[string]*schema.ConnState
+	chg := task.Change()
+	if err := chg.Get("prev-conns", &prevConns); err != nil && !errors.Is(err, state.ErrNoState) {
+		return err
+	}
+
 	var connectRefs = []*interfaces.ConnRef{}
 	var wconns = workshopConns(wp)
 	var plugDynamic = make(map[string]map[string]any)
 	var slotDynamic = make(map[string]map[string]any)
+
+	// Restore previously connected interfaces that were disconnected during refresh
+	for _, sdkConns := range prevConns {
+		for connID, connState := range sdkConns {
+			// Only restore manually created connections (auto=false) that were
+			// not previously marked as undesired. Auto-connected pairs will be
+			// re-discovered by the auto-connect logic.
+			if connState.Auto || connState.Undesired {
+				continue
+			}
+
+			connRef, err := interfaces.ParseConnRef(connID)
+			if err != nil {
+				continue
+			}
+
+			// Skip if connection already exists in conns state
+			if _, ok := conns[connID]; ok {
+				continue
+			}
+
+			// Only restore connections for the current SDK
+			if connRef.PlugRef.Sdk != info.Name && connRef.SlotRef.Sdk != info.Name {
+				continue
+			}
+
+			// Check if plug and slot still exist in the repository
+			plug := m.repo.Plug(connRef.PlugRef.ProjectId, connRef.PlugRef.Workshop, connRef.PlugRef.Sdk, connRef.PlugRef.Name)
+			slot := m.repo.Slot(connRef.SlotRef.ProjectId, connRef.SlotRef.Workshop, connRef.SlotRef.Sdk, connRef.SlotRef.Name)
+			if plug == nil || slot == nil {
+				continue
+			}
+
+			// Restore dynamic attributes from remounts for mount interfaces
+			if connState.Interface == "mount" {
+				if src, ok := remounts[connID]; ok {
+					if slotDynamic[connID] == nil {
+						slotDynamic[connID] = make(map[string]any)
+					}
+					slotDynamic[connID]["host-source"] = src
+				}
+			}
+
+			// Restore dynamic attributes from the previous connection state
+			if connState.DynamicPlugAttrs != nil {
+				if plugDynamic[connID] == nil {
+					plugDynamic[connID] = make(map[string]any)
+				}
+				for k, v := range connState.DynamicPlugAttrs {
+					plugDynamic[connID][k] = v
+				}
+			}
+			if connState.DynamicSlotAttrs != nil {
+				if slotDynamic[connID] == nil {
+					slotDynamic[connID] = make(map[string]any)
+				}
+				for k, v := range connState.DynamicSlotAttrs {
+					slotDynamic[connID][k] = v
+				}
+			}
+
+			connectRefs = append(connectRefs, connRef)
+
+			// Mark this connection as restored so it won't be processed again
+			conns[connID] = &schema.ConnState{
+				Auto:             connState.Auto,
+				Interface:        connState.Interface,
+				StaticPlugAttrs:  connState.StaticPlugAttrs,
+				DynamicPlugAttrs: connState.DynamicPlugAttrs,
+				StaticSlotAttrs:  connState.StaticSlotAttrs,
+				DynamicSlotAttrs: connState.DynamicSlotAttrs,
+			}
+		}
+	}
 
 	for _, plug := range info.Plugs {
 		ref := plug.Ref()
@@ -375,6 +456,32 @@ func (m *InterfaceManager) doDisconnectInterfaces(task *state.Task, tomb *tomb.T
 	connections, err := m.repo.Connections(project.ProjectId, w, s)
 	if err != nil {
 		return err
+	}
+
+	// Store connection states before disconnect so they can be restored during refresh.
+	conns, err := getConns(st)
+	if err != nil {
+		return err
+	}
+	var prevConns map[string]*schema.ConnState
+	for _, cref := range connections {
+		if connState, ok := conns[cref.ID()]; ok {
+			if prevConns == nil {
+				prevConns = make(map[string]*schema.ConnState)
+			}
+			prevConns[cref.ID()] = connState
+		}
+	}
+	if prevConns != nil {
+		chg := task.Change()
+		var storedConns map[string]map[string]*schema.ConnState
+		if err = chg.Get("prev-conns", &storedConns); errors.Is(err, state.ErrNoState) {
+			storedConns = make(map[string]map[string]*schema.ConnState)
+		} else if err != nil {
+			return err
+		}
+		storedConns[s] = prevConns
+		chg.Set("prev-conns", storedConns)
 	}
 
 	ts := m.batchDisconnectTasks(*project, w, s, connections)
