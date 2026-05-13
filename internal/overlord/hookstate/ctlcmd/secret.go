@@ -17,6 +17,15 @@
 
 package ctlcmd
 
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/canonical/workshop/internal/overlord/hookstate"
+	"github.com/canonical/workshop/internal/secrets"
+)
+
 var (
 	shortGetSecretHelp = "Retrieve the value of a declared secret plug"
 	longGetSecretHelp  = `
@@ -27,18 +36,9 @@ It is intended to be invoked from SDK hooks or scripts running inside
 a workshop. The command authenticates the caller via the workshopctl
 context and prints the resolved secret value to stdout with no
 trailing newline.
-
-Resolution against a configured route and provider is not yet
-implemented; for now the command returns a stub value so SDKs and
-tooling can be wired end to end.
 `
 )
 
-// init registers get-secret with the workshopctl command set so it is
-// discoverable by the top-level parser in ctlcmd.go.
-//
-// Note: get-secret must also appear in nonRootAllowed for SDK hooks
-// running as a non-root user to invoke it without sudo.
 func init() {
 	generator := func() command {
 		return &getSecretCommand{}
@@ -51,22 +51,10 @@ func init() {
 	)
 }
 
-// getSecretPositional holds the positional arguments accepted by the
-// get-secret subcommand.
-//
-// Fields are populated by go-flags during argument parsing. PlugName
-// is marked required, so by the time Execute runs the parser has
-// already rejected invocations that omit it.
 type getSecretPositional struct {
 	PlugName string `positional-arg-name:"<plug-name>" required:"yes" description:"name of the secret plug declared in sdkcraft.yaml"`
 }
 
-// getSecretCommand implements the workshopctl get-secret subcommand.
-//
-// It embeds baseCommand to inherit the standard stdout/stderr writers
-// and the hookstate.Context plumbing shared by all workshopctl
-// subcommands, and embeds getSecretPositional to expose the
-// <plug-name> argument to go-flags.
 type getSecretCommand struct {
 	baseCommand
 	getSecretPositional `positional-args:"yes"`
@@ -74,38 +62,48 @@ type getSecretCommand struct {
 
 // Execute resolves the secret plug named by c.PlugName for the
 // calling SDK and writes the resolved value to stdout.
-//
-// Preconditions:
-//   - c.PlugName has been populated by go-flags (enforced via the
-//     required:"yes" tag on getSecretPositional).
-//   - c.c (the hookstate context) has been set by the workshopctl
-//     dispatcher. This carries the authenticated SDK identity that
-//     the daemon associates with the request.
-//
-// Postconditions:
-//   - On success, only the resolved secret value is written to
-//     stdout, with no trailing newline, and nil is returned. The
-//     caller is responsible for consuming the value (e.g. by
-//     exporting it as an environment variable for the duration of a
-//     script) without persisting it.
-//   - On failure, stdout is left empty, an error is returned, and
-//     the workshopctl entry point in Run propagates a non-zero exit
-//     code to the caller. The error message is intended for stderr
-//     consumption by the caller and must not include the secret
-//     value.
-//
-// Current behaviour: until the routing engine in SEC-005 lands this
-// returns the stub string "stub-secret-value-for-<plug-name>" so the
-// IPC plumbing between SDKs and the daemon can be exercised end to
-// end. Plug declaration validation and provider resolution will
-// replace the stub in later patches.
 func (c *getSecretCommand) Execute([]string) error {
-	_, err := c.ensureContext()
+	ctx, err := c.ensureContext()
 	if err != nil {
 		return err
 	}
 
-	stubValue := "stub-secret-value-for-" + c.PlugName
-	c.printf("%s", stubValue)
+	ctx.Lock()
+	defer ctx.Unlock()
+
+	resolver, err := getSecretResolver(ctx)
+	if err != nil {
+		return err
+	}
+
+	plugName := c.PlugName
+
+	value, err := resolver(context.Background(), plugName)
+	if err != nil {
+		if errors.Is(err, secrets.ErrUnroutedSecret) {
+			return fmt.Errorf(
+				"secret plug %q is not connected to a slot", plugName,
+			)
+		}
+		return err
+	}
+
+	c.printf("%s", value)
 	return nil
+}
+
+// getSecretResolver retrieves the SecretResolverFunc from the hook
+// context cache.
+func getSecretResolver(
+	ctx *hookstate.Context,
+) (secrets.SecretResolverFunc, error) {
+	resolver := ctx.Cached("secret-resolver")
+	if resolver == nil {
+		return nil, fmt.Errorf("secret resolver not available")
+	}
+	r, ok := resolver.(secrets.SecretResolverFunc)
+	if !ok {
+		return nil, fmt.Errorf("invalid secret resolver in context")
+	}
+	return r, nil
 }

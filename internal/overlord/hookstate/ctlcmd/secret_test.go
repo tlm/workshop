@@ -18,6 +18,9 @@
 package ctlcmd_test
 
 import (
+	"context"
+	"fmt"
+
 	"gopkg.in/check.v1"
 
 	"github.com/canonical/workshop/internal/dirs"
@@ -25,6 +28,7 @@ import (
 	"github.com/canonical/workshop/internal/overlord/hookstate/ctlcmd"
 	"github.com/canonical/workshop/internal/overlord/hookstate/hooktest"
 	"github.com/canonical/workshop/internal/overlord/state"
+	"github.com/canonical/workshop/internal/secrets"
 	"github.com/canonical/workshop/internal/testutil"
 )
 
@@ -58,25 +62,40 @@ func (s *secretSuite) SetUpTest(c *check.C) {
 	s.mockContext = ctx
 }
 
-// TestGetSecretReturnsStub exercises the success path: a valid
-// hook context plus a plug name should yield the stub value on
-// stdout, nothing on stderr, and no error. The stub format is
-// "stub-secret-value-for-<plug-name>" and SEC-005 will replace it
-// with a real resolver call.
-func (s *secretSuite) TestGetSecretReturnsStub(c *check.C) {
+// mockSecretResolver returns a SecretResolverFunc that resolves
+// every plug to "resolved-<plug-name>".
+func mockSecretResolver() secrets.SecretResolverFunc {
+	return func(_ context.Context, plugName string) (string, error) {
+		return "resolved-" + plugName, nil
+	}
+}
+
+// injectResolver caches a mock resolver in the hook context.
+func injectResolver(ctx *hookstate.Context) {
+	ctx.Lock()
+	defer ctx.Unlock()
+	ctx.Cache("secret-resolver", mockSecretResolver())
+}
+
+// TestGetSecretSuccess exercises the success path: a valid hook
+// context with an injected resolver plus a plug name yields the
+// resolved value on stdout.
+func (s *secretSuite) TestGetSecretSuccess(c *check.C) {
+	injectResolver(s.mockContext)
+
 	args := []string{"get-secret", "aws-credentials"}
 	stdout, stderr, err := ctlcmd.Run(s.mockContext, args, 0)
 
 	c.Assert(err, check.IsNil)
-	c.Check(string(stdout), check.Equals, "stub-secret-value-for-aws-credentials")
+	c.Check(string(stdout), check.Equals, "resolved-aws-credentials")
 	c.Check(string(stderr), check.Equals, "")
 }
 
 // TestGetSecretNoTrailingNewline guards the contract that the
-// secret value is written verbatim, with no trailing newline. SDK
-// hooks typically capture the value via `$(workshopctl get-secret
-// X)`, where a stray newline would corrupt downstream consumers.
+// secret value is written verbatim, with no trailing newline.
 func (s *secretSuite) TestGetSecretNoTrailingNewline(c *check.C) {
+	injectResolver(s.mockContext)
+
 	args := []string{"get-secret", "aws-credentials"}
 	stdout, _, err := ctlcmd.Run(s.mockContext, args, 0)
 
@@ -86,9 +105,7 @@ func (s *secretSuite) TestGetSecretNoTrailingNewline(c *check.C) {
 }
 
 // TestGetSecretMissingContext exercises the authentication
-// boundary: invocations without a hook context (i.e. callers that
-// did not present a valid WORKSHOP_COOKIE) must be rejected before
-// any value is produced.
+// boundary: invocations without a hook context must be rejected.
 func (s *secretSuite) TestGetSecretMissingContext(c *check.C) {
 	args := []string{"get-secret", "aws-credentials"}
 	stdout, _, err := ctlcmd.Run(nil, args, 0)
@@ -100,9 +117,7 @@ func (s *secretSuite) TestGetSecretMissingContext(c *check.C) {
 }
 
 // TestGetSecretRequiresPlugName exercises the required positional
-// argument: go-flags must reject the invocation before Execute
-// runs, so no stub value can leak when the caller forgets the
-// plug name.
+// argument.
 func (s *secretSuite) TestGetSecretRequiresPlugName(c *check.C) {
 	args := []string{"get-secret"}
 	stdout, _, err := ctlcmd.Run(s.mockContext, args, 0)
@@ -113,14 +128,46 @@ func (s *secretSuite) TestGetSecretRequiresPlugName(c *check.C) {
 }
 
 // TestGetSecretAllowedAsNonRoot guards the nonRootAllowed entry
-// for get-secret. SDK hooks run as a non-root user inside the
-// workshop, so they must be able to invoke this command without
-// sudo. If the entry is ever removed from nonRootAllowed in
-// ctlcmd.go this test fails with a ForbiddenCommandError.
+// for get-secret.
 func (s *secretSuite) TestGetSecretAllowedAsNonRoot(c *check.C) {
+	injectResolver(s.mockContext)
+
 	args := []string{"get-secret", "aws-credentials"}
 	stdout, _, err := ctlcmd.Run(s.mockContext, args, 1000)
 
 	c.Assert(err, check.IsNil)
-	c.Check(string(stdout), check.Equals, "stub-secret-value-for-aws-credentials")
+	c.Check(string(stdout), check.Equals, "resolved-aws-credentials")
+}
+
+// TestGetSecretUnrouted exercises the error path when the resolver
+// returns ErrUnroutedSecret.
+func (s *secretSuite) TestGetSecretUnrouted(c *check.C) {
+	resolver := secrets.SecretResolverFunc(func(_ context.Context, plugName string) (string, error) {
+		return "", fmt.Errorf(
+			"secret plug %q is not connected: %w",
+			plugName, secrets.ErrUnroutedSecret,
+		)
+	})
+	s.mockContext.Lock()
+	s.mockContext.Cache("secret-resolver", resolver)
+	s.mockContext.Unlock()
+
+	args := []string{"get-secret", "aws-credentials"}
+	stdout, _, err := ctlcmd.Run(s.mockContext, args, 0)
+
+	c.Assert(err, check.NotNil)
+	c.Check(err, check.ErrorMatches,
+		`secret plug "aws-credentials" is not connected to a slot`)
+	c.Check(string(stdout), check.Equals, "")
+}
+
+// TestGetSecretNoResolver exercises the error path when no
+// resolver has been injected into the context.
+func (s *secretSuite) TestGetSecretNoResolver(c *check.C) {
+	args := []string{"get-secret", "aws-credentials"}
+	stdout, _, err := ctlcmd.Run(s.mockContext, args, 0)
+
+	c.Assert(err, check.NotNil)
+	c.Check(err, check.ErrorMatches, `secret resolver not available`)
+	c.Check(string(stdout), check.Equals, "")
 }

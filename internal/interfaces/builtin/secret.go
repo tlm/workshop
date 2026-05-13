@@ -20,12 +20,15 @@
 package builtin
 
 import (
+	"context"
 	"fmt"
 	"slices"
 
 	"github.com/canonical/workshop/internal/interfaces"
 	"github.com/canonical/workshop/internal/interfaces/lxd_device"
 	"github.com/canonical/workshop/internal/sdk"
+	"github.com/canonical/workshop/internal/secrets"
+	secretsbuiltin "github.com/canonical/workshop/internal/secrets/builtin"
 )
 
 const secretSummary = `allows SDKs to declare and consume secrets from the Workshop environment`
@@ -69,7 +72,10 @@ func (iface *secretInterface) StaticInfo() interfaces.StaticInfo {
 func (iface *secretInterface) BeforePreparePlug(plug *sdk.PlugInfo) error {
 	for name := range plug.Attrs {
 		if !slices.Contains(knownSecretPlugAttributes, name) {
-			return fmt.Errorf(`unknown attribute for secret interface plug: %q`, name)
+			return fmt.Errorf(
+				`unknown attribute for secret interface plug: %q`,
+				name,
+			)
 		}
 	}
 	nameVal, ok := plug.Attrs["name"]
@@ -78,10 +84,14 @@ func (iface *secretInterface) BeforePreparePlug(plug *sdk.PlugInfo) error {
 	}
 	name, ok := nameVal.(string)
 	if !ok {
-		return fmt.Errorf(`"name" attribute for secret interface plug is not a string`)
+		return fmt.Errorf(
+			`"name" attribute for secret interface plug is not a string`,
+		)
 	}
 	if name == "" {
-		return fmt.Errorf(`"name" attribute for secret interface plug must not be empty`)
+		return fmt.Errorf(
+			`"name" attribute for secret interface plug must not be empty`,
+		)
 	}
 	return nil
 }
@@ -89,7 +99,9 @@ func (iface *secretInterface) BeforePreparePlug(plug *sdk.PlugInfo) error {
 func (iface *secretInterface) BeforePrepareSlot(slot *sdk.SlotInfo) error {
 	for name := range slot.Attrs {
 		if !slices.Contains(knownSecretSlotAttributes, name) {
-			return fmt.Errorf(`unknown attribute for secret interface slot: %q`, name)
+			return fmt.Errorf(
+				`unknown attribute for secret interface slot: %q`, name,
+			)
 		}
 	}
 
@@ -99,10 +111,16 @@ func (iface *secretInterface) BeforePrepareSlot(slot *sdk.SlotInfo) error {
 	}
 	provider, ok := providerVal.(string)
 	if !ok {
-		return fmt.Errorf(`"provider" attribute for secret interface slot is not a string`)
+		return fmt.Errorf(
+			`"provider" attribute for secret interface slot is not a string`,
+		)
 	}
 	if !slices.Contains(allowedSecretProviders, provider) {
-		return fmt.Errorf(`unsupported provider %q for secret interface slot: must be one of %v`, provider, allowedSecretProviders)
+		return fmt.Errorf(
+			`unsupported provider %q for secret interface slot: `+
+				`must be one of %v`,
+			provider, allowedSecretProviders,
+		)
 	}
 
 	sourceVal, ok := slot.Attrs["source"]
@@ -111,23 +129,75 @@ func (iface *secretInterface) BeforePrepareSlot(slot *sdk.SlotInfo) error {
 	}
 	source, ok := sourceVal.(string)
 	if !ok {
-		return fmt.Errorf(`"source" attribute for secret interface slot is not a string`)
+		return fmt.Errorf(
+			`"source" attribute for secret interface slot is not a string`,
+		)
 	}
 	if source == "" {
-		return fmt.Errorf(`"source" attribute for secret interface slot must not be empty`)
+		return fmt.Errorf(
+			`"source" attribute for secret interface slot must not be empty`,
+		)
 	}
 
 	return nil
 }
 
-func (iface *secretInterface) AutoConnect(plug *sdk.PlugInfo, slot *sdk.SlotInfo) bool {
+func (iface *secretInterface) AutoConnect(
+	plug *sdk.PlugInfo, slot *sdk.SlotInfo,
+) bool {
 	// Deny-auto-connection is enforced via the base declaration.
 	return true
 }
 
-// MountConnectedPlug is a no-op placeholder until secret delivery via LXD is implemented.
-func (iface *secretInterface) MountConnectedPlug(_ *lxd_device.Specification, _ *interfaces.ConnectedPlug, _ *interfaces.ConnectedSlot) error {
+// MountConnectedPlug verifies that the provider named by the connected
+// slot is registered in the secrets registry and that the configured
+// source resolves successfully. Both checks must pass for the connection
+// to be accepted; otherwise the connection is rejected so that it can be
+// retried once the provider is available or the source is corrected.
+func (iface *secretInterface) MountConnectedPlug(
+	_ *lxd_device.Specification,
+	_ *interfaces.ConnectedPlug,
+	slot *interfaces.ConnectedSlot,
+) error {
+	var providerName string
+	if err := slot.Attr("provider", &providerName); err != nil {
+		return fmt.Errorf(
+			"cannot read provider attribute from secret slot: %w", err,
+		)
+	}
+
+	var source string
+	if err := slot.Attr("source", &source); err != nil {
+		return fmt.Errorf(
+			"cannot read source attribute from secret slot: %w", err,
+		)
+	}
+
+	// Compile-time assertion that GetSecretProvider matches the lookup
+	// signature used by the Resolver.
+	var _ secrets.ProviderLookup = GetSecretProvider
+
+	prov, ok := GetSecretProvider(providerName)
+	if !ok {
+		return fmt.Errorf(
+			"secret provider %q is not registered", providerName,
+		)
+	}
+
+	if _, err := prov.Resolve(context.Background(), source); err != nil {
+		return fmt.Errorf(
+			"secret provider %q cannot resolve source %q: %w",
+			providerName, source, err,
+		)
+	}
+
 	return nil
+}
+
+// GetSecretProvider looks up a secret provider by name. It is a thin
+// wrapper around the builtin registry that can be overridden in tests.
+var GetSecretProvider = func(name string) (secrets.Provider, bool) {
+	return secretsbuiltin.GetProvider(name)
 }
 
 func init() {
