@@ -6,7 +6,10 @@ import (
 
 	"github.com/jessevdk/go-flags"
 
+	"github.com/canonical/workshop/internal/overlord/hookstate"
 	"github.com/canonical/workshop/internal/overlord/hookstate/ctlcmd"
+	"github.com/canonical/workshop/internal/secrets"
+	"github.com/canonical/workshop/internal/workshop"
 )
 
 // workshopCtlOptions holds the various options with which workshopctl is invoked.
@@ -56,6 +59,14 @@ func v1PostWorkshopCtl(c *Command, r *http.Request, _ *userState) Response {
 		context.Unlock()
 	}
 
+	if context != nil {
+		if err := injectSecretResolver(c, context); err != nil {
+			return statusInternalError(
+				"cannot prepare secret resolver: %w", err,
+			)
+		}
+	}
+
 	stdout, stderr, err := ctlcmd.Run(context, reqData.Args, uid)
 	if err != nil {
 		if e, ok := err.(*flags.Error); ok && e.Type == flags.ErrHelp {
@@ -71,4 +82,46 @@ func v1PostWorkshopCtl(c *Command, r *http.Request, _ *userState) Response {
 	}
 
 	return SyncResponse(result, http.StatusOK)
+}
+
+// injectSecretResolver binds a Resolver to the SDK identified by the
+// hook context and caches it so workshopctl get-secret can use it.
+func injectSecretResolver(
+	c *Command, ctx *hookstate.Context,
+) error {
+	ctx.Lock()
+	defer ctx.Unlock()
+
+	task, ok := ctx.Task()
+	if !ok {
+		return nil
+	}
+
+	var prj workshop.Project
+	if err := task.Get("project", &prj); err != nil {
+		return err
+	}
+
+	var ws string
+	if err := task.Get("workshop", &ws); err != nil {
+		return err
+	}
+
+	sdkName := ctx.Sdk()
+	if sdkName == "" {
+		return nil
+	}
+
+	repo := c.d.overlord.InterfaceManager().Repository()
+	resolver := secrets.NewResolver(repo, getSecretProvider)
+	bound := resolver.Bind(prj.ProjectId, ws, sdkName)
+	ctx.Cache("secret-resolver", bound)
+
+	return nil
+}
+
+// getSecretProvider looks up a secret provider by name. It is a stub
+// until the host-env provider is implemented.
+func getSecretProvider(name string) (secrets.Provider, bool) {
+	return nil, false
 }

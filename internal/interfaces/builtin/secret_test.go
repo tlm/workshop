@@ -20,10 +20,16 @@
 package builtin_test
 
 import (
+	"context"
+	"fmt"
+
 	"gopkg.in/check.v1"
 
 	"github.com/canonical/workshop/internal/interfaces"
 	"github.com/canonical/workshop/internal/interfaces/builtin"
+	"github.com/canonical/workshop/internal/interfaces/lxd_device"
+	"github.com/canonical/workshop/internal/secrets"
+	secretsbuiltin "github.com/canonical/workshop/internal/secrets/builtin"
 	"github.com/canonical/workshop/internal/testutil"
 )
 
@@ -39,6 +45,70 @@ var _ = check.Suite(&secretSuite{
 func (s *secretSuite) SetUpTest(c *check.C) {
 	s.projectId = "42424242"
 }
+
+// mockSecretProvider returns the value of values[source] or an error
+// if no entry exists for that source.
+type mockSecretProvider struct {
+	name   string
+	values map[string]string
+}
+
+func (p *mockSecretProvider) Name() string { return p.name }
+
+func (p *mockSecretProvider) Resolve(
+	_ context.Context, source string,
+) (string, error) {
+	v, ok := p.values[source]
+	if !ok {
+		return "", fmt.Errorf("source %q not available", source)
+	}
+	return v, nil
+}
+
+// mountConnectedPlugDefiner mirrors the unexported interface that
+// lxd_device.Specification.AddConnectedPlug uses to dispatch into the
+// backend; this lets the test call MountConnectedPlug directly without
+// having to construct a full Specification (and stub out LXD lookups).
+type mountConnectedPlugDefiner interface {
+	MountConnectedPlug(
+		spec *lxd_device.Specification,
+		plug *interfaces.ConnectedPlug,
+		slot *interfaces.ConnectedSlot,
+	) error
+}
+
+// mountSecretPlug invokes MountConnectedPlug directly on the secret
+// interface using mocked plug and slot info.
+func (s *secretSuite) mountSecretPlug(
+	c *check.C, plugYaml, slotYaml, plugSdk, plugName, slotSdk, slotName string,
+) error {
+	plug := builtin.MockPlug(c, plugYaml, s.projectId, "ws", plugSdk, plugName)
+	connectedPlug := interfaces.NewConnectedPlug(plug, nil, nil)
+	slot := builtin.MockSlot(c, slotYaml, s.projectId, "ws", slotSdk, slotName)
+	connectedSlot := interfaces.NewConnectedSlot(slot, nil, nil)
+
+	definer, ok := s.iface.(mountConnectedPlugDefiner)
+	c.Assert(ok, check.Equals, true)
+	return definer.MountConnectedPlug(nil, connectedPlug, connectedSlot)
+}
+
+const secretPlugYaml = `name: consumer
+base: ubuntu@22.04
+plugs:
+  github-token:
+    interface: secret
+    name: GITHUB_TOKEN
+`
+
+const secretSlotYaml = `name: system
+base: ubuntu@22.04
+type: system
+slots:
+  github-token-provider:
+    interface: secret
+    provider: host-env
+    source: GITHUB_TOKEN
+`
 
 func (s *secretSuite) TestName(c *check.C) {
 	c.Assert(s.iface.Name(), check.Equals, "secret")
@@ -202,4 +272,64 @@ slots:
 `, s.projectId, "ws", "system", "aws-creds-provider")
 	c.Assert(interfaces.BeforePrepareSlot(s.iface, slot), check.ErrorMatches,
 		`"source" attribute for secret interface slot must not be empty`)
+}
+
+// MountConnectedPlug tests
+
+// TestMountConnectedPlugResolves verifies that the connection succeeds
+// when the slot's provider is registered and the source resolves.
+func (s *secretSuite) TestMountConnectedPlugResolves(c *check.C) {
+	restore := secretsbuiltin.MockProvider(&mockSecretProvider{
+		name:   "host-env",
+		values: map[string]string{"GITHUB_TOKEN": "shh"},
+	})
+	defer restore()
+
+	err := s.mountSecretPlug(
+		c, secretPlugYaml, secretSlotYaml,
+		"consumer", "github-token",
+		"system", "github-token-provider",
+	)
+	c.Assert(err, check.IsNil)
+}
+
+// TestMountConnectedPlugProviderMissing verifies that the connection is
+// rejected when the slot names a provider that is not registered.
+func (s *secretSuite) TestMountConnectedPlugProviderMissing(c *check.C) {
+	// Sanity check: no provider registered.
+	_, ok := builtin.GetSecretProvider("host-env")
+	c.Assert(ok, check.Equals, false)
+
+	err := s.mountSecretPlug(
+		c, secretPlugYaml, secretSlotYaml,
+		"consumer", "github-token",
+		"system", "github-token-provider",
+	)
+	c.Assert(err, check.ErrorMatches,
+		`secret provider "host-env" is not registered`)
+}
+
+// TestMountConnectedPlugSourceUnresolved verifies that the connection
+// is rejected when the slot's source cannot be resolved by the
+// registered provider.
+func (s *secretSuite) TestMountConnectedPlugSourceUnresolved(c *check.C) {
+	restore := secretsbuiltin.MockProvider(&mockSecretProvider{
+		name: "host-env",
+		// no GITHUB_TOKEN entry -> Resolve fails
+	})
+	defer restore()
+
+	err := s.mountSecretPlug(
+		c, secretPlugYaml, secretSlotYaml,
+		"consumer", "github-token",
+		"system", "github-token-provider",
+	)
+	c.Assert(err, check.ErrorMatches,
+		`secret provider "host-env" cannot resolve source "GITHUB_TOKEN":.*`)
+}
+
+// TestGetSecretProviderSignature is a compile-time check that the
+// exported lookup matches the resolver's signature.
+func (s *secretSuite) TestGetSecretProviderSignature(c *check.C) {
+	var _ secrets.ProviderLookup = builtin.GetSecretProvider
 }
