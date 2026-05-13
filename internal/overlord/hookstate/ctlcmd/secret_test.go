@@ -171,3 +171,55 @@ func (s *secretSuite) TestGetSecretNoResolver(c *check.C) {
 	c.Check(err, check.ErrorMatches, `secret resolver not available`)
 	c.Check(string(stdout), check.Equals, "")
 }
+
+// mockWorkshopSecretResolver echoes its inputs back so tests can
+// assert the resolver received the SDK and plug names.
+func mockWorkshopSecretResolver() ctlcmd.WorkshopSecretResolverFunc {
+	return func(_ context.Context, sdkName, plugName string) (string, error) {
+		return sdkName + "/" + plugName, nil
+	}
+}
+
+func injectWorkshopResolver(ctx *hookstate.Context) {
+	ctx.Lock()
+	defer ctx.Unlock()
+	ctx.Cache("workshop-secret-resolver", mockWorkshopSecretResolver())
+}
+
+// TestGetSecretFromWorkshopShell resolves a qualified <sdk>:<plug>
+// argument via the workshop-scoped resolver.
+func (s *secretSuite) TestGetSecretFromWorkshopShell(c *check.C) {
+	injectWorkshopResolver(s.mockContext)
+
+	args := []string{"get-secret", "my-sdk:aws-credentials"}
+	stdout, _, err := ctlcmd.Run(s.mockContext, args, 0)
+
+	c.Assert(err, check.IsNil)
+	c.Check(string(stdout), check.Equals, "my-sdk/aws-credentials")
+}
+
+// TestGetSecretWorkshopShellRequiresQualifiedForm fails when a
+// workshop-shell caller passes an unqualified plug name.
+func (s *secretSuite) TestGetSecretWorkshopShellRequiresQualifiedForm(c *check.C) {
+	injectWorkshopResolver(s.mockContext)
+
+	args := []string{"get-secret", "aws-credentials"}
+	_, _, err := ctlcmd.Run(s.mockContext, args, 0)
+
+	c.Assert(err, check.NotNil)
+	c.Check(err, check.ErrorMatches,
+		`plug name must be qualified as <sdk>:<plug> when called from a workshop shell`)
+}
+
+// TestGetSecretHookRejectsQualifiedForm fails when an SDK-bound hook
+// caller passes a qualified plug name (the SDK is already implicit).
+func (s *secretSuite) TestGetSecretHookRejectsQualifiedForm(c *check.C) {
+	injectResolver(s.mockContext)
+
+	args := []string{"get-secret", "my-sdk:aws-credentials"}
+	_, _, err := ctlcmd.Run(s.mockContext, args, 0)
+
+	c.Assert(err, check.NotNil)
+	c.Check(err, check.ErrorMatches,
+		`qualified <sdk>:<plug> form is only valid from a workshop shell`)
+}

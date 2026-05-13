@@ -86,57 +86,67 @@ func v1PostWorkshopCtl(c *Command, r *http.Request, _ *userState) Response {
 	return SyncResponse(result, http.StatusOK)
 }
 
-// injectSecretResolver binds a Resolver to the SDK identified by the
-// hook context and caches it so workshopctl get-secret can use it.
+// injectSecretResolver caches a secret resolver onto the context so
+// workshopctl get-secret can use it. For hook contexts it binds to the
+// hook's SDK; for long-lived workshop-cookie contexts it caches a
+// workshop-scoped resolver (SDK supplied at call time).
 func injectSecretResolver(
 	c *Command, ctx *hookstate.Context,
 ) error {
 	ctx.Lock()
 	defer ctx.Unlock()
 
-	task, ok := ctx.Task()
-	if !ok {
-		return nil
-	}
-
-	var prj workshop.Project
-	if err := task.Get("project", &prj); err != nil {
-		return err
-	}
-
-	var ws string
-	if err := task.Get("workshop", &ws); err != nil {
-		return err
-	}
-
-	var owner string
-	if err := task.Change().Get("user", &owner); err != nil {
-		return err
-	}
-
-	sdkName := ctx.Sdk()
-	if sdkName == "" {
-		return nil
-	}
-
 	repo := c.d.overlord.InterfaceManager().Repository()
 	resolver := secrets.NewResolver(repo, getSecretProvider)
-	bound := resolver.Bind(prj.ProjectId, ws, sdkName)
 
-	// Inject the workshop owner onto every resolver invocation so
-	// providers like secret-service can reach the owner's session bus
-	// or keychain. The resolver itself stays oblivious to workshop
-	// state; the wiring layer owns that concern.
-	withOwner := secrets.SecretResolverFunc(
-		func(rctx context.Context, plugName string) (string, error) {
-			rctx = context.WithValue(
-				rctx, workshop.ContextUser, owner,
-			)
-			return bound(rctx, plugName)
+	if task, ok := ctx.Task(); ok {
+		var prj workshop.Project
+		if err := task.Get("project", &prj); err != nil {
+			return err
+		}
+
+		var ws string
+		if err := task.Get("workshop", &ws); err != nil {
+			return err
+		}
+
+		var owner string
+		if err := task.Change().Get("user", &owner); err != nil {
+			return err
+		}
+
+		sdkName := ctx.Sdk()
+		if sdkName == "" {
+			return nil
+		}
+
+		bound := resolver.Bind(prj.ProjectId, ws, sdkName)
+		// Inject the workshop owner onto every resolver invocation so
+		// providers like secret-service can reach the owner's session
+		// bus or keychain. The resolver itself stays oblivious to
+		// workshop state; the wiring layer owns that concern.
+		ctx.Cache("secret-resolver", secrets.SecretResolverFunc(
+			func(rctx context.Context, plugName string) (string, error) {
+				rctx = context.WithValue(rctx, workshop.ContextUser, owner)
+				return bound(rctx, plugName)
+			},
+		))
+		return nil
+	}
+
+	cookie := ctx.Cookie()
+	if cookie == nil {
+		return nil
+	}
+	prj := cookie.Project
+	ws := cookie.Workshop
+	owner := cookie.User
+	ctx.Cache("workshop-secret-resolver", ctlcmd.WorkshopSecretResolverFunc(
+		func(rctx context.Context, sdkName, plugName string) (string, error) {
+			rctx = context.WithValue(rctx, workshop.ContextUser, owner)
+			return resolver.ResolvePlug(rctx, prj.ProjectId, ws, sdkName, plugName)
 		},
-	)
-	ctx.Cache("secret-resolver", withOwner)
-
+	))
 	return nil
 }
 
