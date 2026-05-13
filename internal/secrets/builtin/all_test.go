@@ -9,13 +9,17 @@ import (
 	"testing"
 
 	"gopkg.in/check.v1"
+
+	"github.com/canonical/workshop/internal/secrets"
 )
 
 func Test(t *testing.T) {
 	check.TestingT(t)
 }
 
-type RegistrySuite struct{}
+type RegistrySuite struct {
+	savedProviders map[string]secrets.Provider
+}
 
 var _ = check.Suite(&RegistrySuite{})
 
@@ -34,7 +38,12 @@ func (p *stubProvider) Resolve(_ context.Context, source string) (string, error)
 }
 
 func (s *RegistrySuite) SetUpTest(c *check.C) {
+	s.savedProviders = allProviders
 	allProviders = nil
+}
+
+func (s *RegistrySuite) TearDownTest(c *check.C) {
+	allProviders = s.savedProviders
 }
 
 func (s *RegistrySuite) TestGetMissing(c *check.C) {
