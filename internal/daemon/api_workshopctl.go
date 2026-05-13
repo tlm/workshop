@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -108,6 +109,11 @@ func injectSecretResolver(
 		return err
 	}
 
+	var owner string
+	if err := task.Change().Get("user", &owner); err != nil {
+		return err
+	}
+
 	sdkName := ctx.Sdk()
 	if sdkName == "" {
 		return nil
@@ -116,7 +122,20 @@ func injectSecretResolver(
 	repo := c.d.overlord.InterfaceManager().Repository()
 	resolver := secrets.NewResolver(repo, getSecretProvider)
 	bound := resolver.Bind(prj.ProjectId, ws, sdkName)
-	ctx.Cache("secret-resolver", bound)
+
+	// Inject the workshop owner onto every resolver invocation so
+	// providers like secret-service can reach the owner's session bus
+	// or keychain. The resolver itself stays oblivious to workshop
+	// state; the wiring layer owns that concern.
+	withOwner := secrets.SecretResolverFunc(
+		func(rctx context.Context, plugName string) (string, error) {
+			rctx = context.WithValue(
+				rctx, workshop.ContextUser, owner,
+			)
+			return bound(rctx, plugName)
+		},
+	)
+	ctx.Cache("secret-resolver", withOwner)
 
 	return nil
 }
