@@ -132,8 +132,9 @@ type Provider interface {
 to enforce the guards. Two options:
 
 - **(a)** Pass owner info through `context.Context` via a typed accessor
-  (`secrets.WorkshopOwnerFromContext(ctx)`); the SEC-005 resolver populates
-  the context before calling `Resolve`. Keeps the interface stable.
+  (`secrets.WorkshopOwnerFromContext(ctx)`); a caller that has workshop
+  state populates the context before invoking the resolver. Keeps the
+  interface stable.
 - **(b)** Extend the interface to `Resolve(ctx, req ResolveRequest)` where
   `ResolveRequest` carries `Source` and `Owner`. More explicit; requires
   updating the host-env memory shim provider signature too.
@@ -143,12 +144,20 @@ providers ignore the context value, and the dependency is documented at
 the resolver→provider boundary. If a later provider needs the same data
 the same accessor works.
 
-The workshop owner UID/GID/home is already discoverable via the existing
-state path: the daemon stores `user.workshop.username` in the LXD project
-config (`internal/workshop/lxd/lxd_backend_project.go`), and
-`osutil.UidGid` resolves it to UID/GID. SEC-005's resolver fetches the
-owner via this path and attaches it to the context before calling
-`provider.Resolve`.
+The owner context is populated **one level up from the resolver, by the
+caller**, not by the resolver itself. The implemented `Resolver` in
+`internal/secrets/resolver.go` is a pure connection-graph traversal helper
+— it is constructed with an `*interfaces.Repository` and a
+`ProviderLookup` function, knows only `(projectID, workshop, sdkName,
+plugName)`, and forwards its `ctx` argument unchanged into
+`provider.Resolve(ctx, source)`. It has no view of workshop state and no
+notion of an owner UID. The workshopctl `get-secret` handler (and any
+other future caller of `ResolvePlug`) is where workshop state is
+reachable, so that handler resolves the owner via the existing state path
+(`user.workshop.username` in LXD project config →
+`osutil.UidGid`) and wraps the context with `WithWorkshopOwner` before
+calling `ResolvePlug`. The owner value then flows through the resolver
+transparently to the `host-file` provider.
 
 ## Scope of Work
 
@@ -156,13 +165,15 @@ owner via this path and attaches it to the context before calling
    - Implement a `hostFileProvider` satisfying `secrets.Provider`.
    - `Name()` returns `"host-file"`.
    - `Resolve` performs all nine guards above in order.
-   - Register via `registerProvider` in package init.
+   - Register via `registerProvider` in package init so it is reachable
+     through `builtin.GetProvider`.
 
 2. **Owner context plumbing (`internal/secrets/`):**
    - Add a `WorkshopOwner` struct (`UID uint32`, `GID uint32`, `Home string`)
-     and `WithWorkshopOwner` / `WorkshopOwnerFromContext` helpers.
-   - The SEC-005 resolver populates the context before dispatching to the
-     provider.
+     and `WithWorkshopOwner` / `WorkshopOwnerFromContext` helpers in the
+     `secrets` package.
+   - The `host-file` provider reads the owner from `ctx` and returns
+     `ErrSecretDenied` if none is present.
 
 3. **Interface backend update
    (`internal/interfaces/builtin/secret.go`):**
@@ -172,9 +183,23 @@ owner via this path and attaches it to the context before calling
      expansion is deferred to resolve time so the slot is portable across
      hosts.
 
-4. **Resolver integration (SEC-005):**
-   - Where SEC-005 resolves a slot to a provider call, look up the
-     workshop owner and inject it via `WithWorkshopOwner`.
+4. **Resolver wiring (caller-side, not in the `Resolver` itself):**
+   - The implemented `secrets.Resolver` is a graph-traversal helper
+     constructed via `NewResolver(repo, lookup ProviderLookup)`. It does
+     not know about workshop state or owner identity, and it must not
+     gain that responsibility. Updates required at its callers:
+     - Wherever the resolver is constructed (the `workshopd` startup
+       path that wires it into the workshopctl `get-secret` handler),
+       compose a `ProviderLookup` that delegates to
+       `internal/secrets/builtin.GetProvider`, so registering
+       `host-file` in `builtin/all.go` makes it reachable.
+     - The `workshopctl get-secret` handler (currently the stub from
+       SEC-002 in `internal/overlord/hookstate/ctlcmd/secret.go`) is
+       responsible for resolving the workshop owner from the active
+       workshop state and wrapping the context with
+       `secrets.WithWorkshopOwner` before calling
+       `Resolver.ResolvePlug`. The resolver forwards that context
+       unchanged into `provider.Resolve`.
    - Existing `host-env` flow is unaffected (memory shim provider ignores
      the context value).
 
