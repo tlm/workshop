@@ -155,6 +155,17 @@ base: ubuntu@20.04
 	c.Assert(file, check.DeepEquals, &workshop.File{Name: "xbert-gpu", Base: "ubuntu@20.04"})
 }
 
+func (f *workshopFile) TestSingleWorkshopFileUnknownField(c *check.C) {
+	yaml := `name: xbert-gpu
+base: ubuntu@24.04
+stray-field: oops
+`
+	f.createSingleWFile(c, "workshop.yaml", yaml)
+	file, err := f.project.Workshop("xbert-gpu")
+	c.Assert(file, check.IsNil)
+	c.Assert(err, check.ErrorMatches, `invalid file ".*": workshop definition YAML:\nline 3: field stray-field not found in type workshop.File`)
+}
+
 func (f *workshopFile) TestSingleWorkshopFileAmbiguous(c *check.C) {
 	yaml := `name: xbert-gpu
 base: ubuntu@20.04

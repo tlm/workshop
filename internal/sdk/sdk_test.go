@@ -251,6 +251,15 @@ plugs:
 	c.Assert(err, check.ErrorMatches, `plug "net" has malformed definition \(found int\)`)
 }
 
+func (s *SdkSuite) TestUnmarshalUnknownTopLevelField(c *check.C) {
+	// NOTE: yaml content cannot use tabs, indent the section with spaces.
+	_, err := sdk.ReadSdkInfo([]byte(`
+name: sdk
+stray-field: oops
+`), s.projectId, "ws")
+	c.Assert(err, check.ErrorMatches, `SDK definition YAML:\nline 3: field stray-field not found in type sdk.sdkYaml`)
+}
+
 func (s *SdkSuite) TestUnmarshalReservedPlugAttribute(c *check.C) {
 	// NOTE: yaml content cannot use tabs, indent the section with spaces.
 	_, err := sdk.ReadSdkInfo([]byte(`

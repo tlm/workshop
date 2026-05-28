@@ -911,3 +911,12 @@ func (m *workshopSketch) TestSketchSdkWorkshopStatusNotReady(c *check.C) {
 		c.Assert(n, check.Equals, i*2)
 	}
 }
+
+func (m *workshopSketch) TestWriteSketchHooksUnknownField(c *check.C) {
+	sketchDir := c.MkDir()
+	badYaml := []byte(`name: sketch
+stray-field: oops
+`)
+	err := writeSketchHooks(sketchDir, badYaml)
+	c.Assert(err, check.ErrorMatches, `sketch SDK YAML:\nline 2: field stray-field not found in type main.SketchFile`)
+}

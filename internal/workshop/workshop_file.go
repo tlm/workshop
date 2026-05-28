@@ -15,6 +15,7 @@
 package workshop
 
 import (
+	"bytes"
 	"cmp"
 	"errors"
 	"fmt"
@@ -289,7 +290,9 @@ func readWorkshop(path string) (*File, error) {
 		}
 		return nil, err
 	}
-	if err = yaml.Unmarshal(buf, &file); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(buf))
+	dec.KnownFields(true)
+	if err = dec.Decode(&file); err != nil {
 		te, ok := err.(*yaml.TypeError)
 		if ok {
 			errs := strings.Join(te.Errors, "\n")

@@ -15,6 +15,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -234,13 +235,20 @@ func ejectSketch(project, sketchdir string, name string) (*revert.Reverter, erro
 	} else if err != nil {
 		return nil, err
 	}
-	var document yaml.Node
-	if err := yaml.Unmarshal(content, &document); err != nil {
+	var file SketchFile
+	dec := yaml.NewDecoder(bytes.NewReader(content))
+	dec.KnownFields(true)
+	if err := dec.Decode(&file); err != nil {
+		te, ok := err.(*yaml.TypeError)
+		if ok {
+			errs := strings.Join(te.Errors, "\n")
+			return nil, fmt.Errorf("sketch SDK YAML:\n%s", errs)
+		}
 		return nil, err
 	}
 
-	var file SketchFile
-	if err := document.Decode(&file); err != nil {
+	var document yaml.Node
+	if err := yaml.Unmarshal(content, &document); err != nil {
 		return nil, err
 	}
 	file.Name = name
@@ -586,7 +594,14 @@ func writeSketchSdk(path string, content []byte) error {
 
 func writeSketchHooks(sketchdir string, content []byte) error {
 	var file SketchFile
-	if err := yaml.Unmarshal(content, &file); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(content))
+	dec.KnownFields(true)
+	if err := dec.Decode(&file); err != nil {
+		te, ok := err.(*yaml.TypeError)
+		if ok {
+			errs := strings.Join(te.Errors, "\n")
+			return fmt.Errorf("sketch SDK YAML:\n%s", errs)
+		}
 		return err
 	}
 
