@@ -41,6 +41,81 @@ func (s *ValidateSuite) TearDownTest(c *check.C) {
 	s.BaseTest.TearDownTest(c)
 }
 
+// TestValidateSketchYaml accepts the sketch SDK YAML shape, including hooks
+// and descriptive metadata that are not part of the old command-local shape.
+func (s *ValidateSuite) TestValidateSketchYaml(c *check.C) {
+	err := sdk.ValidateSketchYaml(strings.NewReader(`name: sketch
+title: Sketch SDK
+summary: Local prototype SDK
+description: Used to prototype workshop customisations.
+hooks:
+  setup-project: |
+    echo setup
+plugs:
+  models:
+    interface: mount
+slots:
+  service:
+    interface: tunnel
+`))
+
+	c.Check(err, check.IsNil)
+}
+
+// TestValidateSketchYamlInvalidHookName rejects hook names that are not part
+// of the sketch SDK hook lifecycle.
+func (s *ValidateSuite) TestValidateSketchYamlInvalidHookName(c *check.C) {
+	err := sdk.ValidateSketchYaml(strings.NewReader(`name: sketch
+hooks:
+  setup-prject: |
+    echo typo
+`))
+
+	c.Assert(err, check.NotNil)
+	c.Check(
+		errors.Is(err, sdk.InvalidSDKHookNameError("setup-prject")),
+		check.Equals,
+		true,
+	)
+}
+
+// TestValidateSketchYamlInvalidName requires the sketch SDK YAML to describe
+// the reserved sketch SDK name.
+func (s *ValidateSuite) TestValidateSketchYamlInvalidName(c *check.C) {
+	err := sdk.ValidateSketchYaml(strings.NewReader(`name: tools
+`))
+
+	c.Assert(err, check.NotNil)
+	c.Check(errors.Is(err, sdk.ErrorInvalidSDKName), check.Equals, true)
+}
+
+// TestValidateSketchYamlUnknownFields reports full SDK metadata fields as
+// unknown when they are not meaningful for sketch SDK YAML.
+func (s *ValidateSuite) TestValidateSketchYamlUnknownFields(c *check.C) {
+	err := sdk.ValidateSketchYaml(strings.NewReader(`name: sketch
+architecture: amd64
+base: ubuntu@24.04
+version: 1.0
+`))
+
+	c.Assert(err, check.ErrorMatches, `unknown SDK YAML fields: .*`)
+
+	var unknown *sdk.UnknownYamlFieldsError
+	ok := errors.As(err, &unknown)
+	c.Assert(ok, check.Equals, true)
+	c.Check(unknown.Fields, check.HasLen, 3)
+
+	field, ok := unknown.Fields["architecture"]
+	c.Assert(ok, check.Equals, true)
+	c.Check(field.Line, check.Equals, 2)
+	c.Check(field.Column, check.Equals, 15)
+
+	_, ok = unknown.Fields["base"]
+	c.Check(ok, check.Equals, true)
+	_, ok = unknown.Fields["version"]
+	c.Check(ok, check.Equals, true)
+}
+
 func (s *ValidateSuite) TestValidateSlotPlugInterfaceName(c *check.C) {
 	valid := []string{
 		"a",
