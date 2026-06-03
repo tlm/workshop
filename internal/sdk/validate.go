@@ -50,7 +50,7 @@ type sdkYamlValidator struct {
 }
 
 type sketchSDKYamlValidator struct {
-	sketchSDKYaml `yaml:",inline"`
+	SketchSDKYaml `yaml:",inline"`
 	Unknown       map[string]UnknownYamlField `yaml:",inline"`
 }
 
@@ -190,32 +190,35 @@ func Validate(sdk *Info) error {
 	return nil
 }
 
-// ValidateSketchYaml checks whether reader contains a valid sketch SDK YAML
-// definition.
-func ValidateSketchYaml(reader io.Reader) error {
+// ParseSketchYaml parses and validates a sketch SDK YAML definition.
+func ParseSketchYaml(reader io.Reader) (SketchSDKYaml, error) {
 	var validator sketchSDKYamlValidator
 	dec := yaml.NewDecoder(reader)
 	err := dec.Decode(&validator)
 
 	var typeErr *yaml.TypeError
 	if errors.As(err, &typeErr) {
-		return fmt.Errorf(
+		return SketchSDKYaml{}, fmt.Errorf(
 			"sketch SDK YAML:\n%s",
 			strings.Join(typeErr.Errors, "\n"),
 		)
 	} else if err != nil {
-		return err
+		return SketchSDKYaml{}, err
 	}
 
 	if len(validator.Unknown) > 0 {
-		return newUnknownYamlFieldsError(validator.Unknown)
+		return SketchSDKYaml{}, newUnknownYamlFieldsError(validator.Unknown)
 	}
 
-	return validateSketchYaml(&validator.sketchSDKYaml)
+	err = ValidateSketchYaml(&validator.SketchSDKYaml)
+	if err != nil {
+		return SketchSDKYaml{}, err
+	}
+	return validator.SketchSDKYaml, nil
 }
 
-// validateSketchYaml checks sketch-specific SDK YAML constraints.
-func validateSketchYaml(y *sketchSDKYaml) error {
+// ValidateSketchYaml checks whether y contains a valid sketch SDK definition.
+func ValidateSketchYaml(y *SketchSDKYaml) error {
 	if !IsSketch(y.Name) {
 		return fmt.Errorf(
 			"%w, sketch SDK name can only be %q",

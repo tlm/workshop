@@ -140,8 +140,8 @@ type sdkYaml struct {
 	Slots       map[string]any    `yaml:"slots,omitempty"`
 }
 
-// sketchSDKYaml describes the editable YAML shape of a sketch SDK.
-type sketchSDKYaml struct {
+// SketchSDKYaml describes the editable YAML shape of a sketch SDK.
+type SketchSDKYaml struct {
 	Description string            `yaml:"description"`
 	Hooks       map[string]string `yaml:"hooks,omitempty"`
 	Name        string            `yaml:"name"`
