@@ -16,7 +16,6 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -824,7 +823,31 @@ func (m *workshopSketch) TestSketchSdkEjectCurrentNotExist(c *check.C) {
 	c.Assert(err, check.ErrorMatches, `cannot eject: "sketch" SDK not found`)
 }
 
-func (m *workshopSketch) TestSketchSdkEjectNoName(c *check.C) {
+func (m *workshopSketch) TestSketchSdkEjectInvalidHookName(c *check.C) {
+	cmd := &CmdSketch{root: &CmdRoot{}}
+	cmdEject := cmd.Command()
+	cmd.eject = true
+	cmd.name = "name"
+
+	m.mockSketchHappyRefreshPath(c, "ws", "transactional")
+	sketchDir := workshop.SketchSdkCurrent(m.userDataDir, m.prjId, "ws")
+	content := []byte(`name: sketch
+hooks:
+  setup-prject: |
+    echo typo
+`)
+	c.Assert(writeSketchSdk(filepath.Join(sketchDir, "sdk.yaml"), content), check.IsNil)
+
+	err := cmd.Run(cmdEject, []string{"ws"})
+	c.Assert(err, check.NotNil)
+	c.Check(
+		err,
+		check.ErrorMatches,
+		`cannot eject: sketch SDK YAML contains unsupported hook "setup-prject"; supported hooks: .*`,
+	)
+}
+
+func (m *workshopSketch) TestSketchSdkEjectInvalidName(c *check.C) {
 	cmd := &CmdSketch{root: &CmdRoot{}}
 	cmdEject := cmd.Command()
 	cmd.eject = true
@@ -836,7 +859,33 @@ func (m *workshopSketch) TestSketchSdkEjectNoName(c *check.C) {
 
 	err := cmd.Run(cmdEject, []string{"ws"})
 	c.Assert(err, check.NotNil)
-	c.Check(errors.Is(err, sdk.ErrorInvalidSDKName), check.Equals, true)
+	c.Check(
+		err,
+		check.ErrorMatches,
+		`cannot eject: sketch SDK YAML must keep name set to "sketch"`,
+	)
+}
+
+func (m *workshopSketch) TestSketchSdkEjectUnknownField(c *check.C) {
+	cmd := &CmdSketch{root: &CmdRoot{}}
+	cmdEject := cmd.Command()
+	cmd.eject = true
+	cmd.name = "name"
+
+	m.mockSketchHappyRefreshPath(c, "ws", "transactional")
+	sketchDir := workshop.SketchSdkCurrent(m.userDataDir, m.prjId, "ws")
+	content := []byte(`name: sketch
+base: ubuntu@24.04
+`)
+	c.Assert(writeSketchSdk(filepath.Join(sketchDir, "sdk.yaml"), content), check.IsNil)
+
+	err := cmd.Run(cmdEject, []string{"ws"})
+	c.Assert(err, check.NotNil)
+	c.Check(
+		err,
+		check.ErrorMatches,
+		`cannot eject: sketch SDK YAML contains unknown fields: "base" at line 2, column 7`,
+	)
 }
 
 func (m *workshopSketch) TestSketchSdkRemoveOK(c *check.C) {

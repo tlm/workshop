@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 
@@ -230,22 +229,19 @@ func ejectSketch(project, sketchdir string, name string) (*revert.Reverter, erro
 	}
 	file, err := sdk.ParseSketchYaml(bytes.NewReader(content))
 	if err != nil {
-		return nil, err
+		return nil, parseSketchYamlUserError(err)
 	}
 
 	var document yaml.Node
 	if err := yaml.Unmarshal(content, &document); err != nil {
 		return nil, err
 	}
-	file.Name = name
+	projectFile := file
+	projectFile.Name = name
 
-	if err := sketchToProjectSdk(&document, name); err != nil {
+	if err := sketchToProjectSdk(&document, projectFile.Name); err != nil {
 		return nil, err
 	}
-	if err := validateProjectSdk(&document, &file); err != nil {
-		return nil, err
-	}
-
 	// This won't be cleaned up on failure. In most cases, the user
 	// is likely to retry the eject after fixing the underlying issue.
 	if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
@@ -291,39 +287,15 @@ func sketchToProjectSdk(document *yaml.Node, name string) error {
 		Name  NodeRef `yaml:"name"`
 		Hooks NodeRef `yaml:"hooks"`
 	}
-	if err := document.Decode(&nodes); err != nil {
+	err := document.Decode(&nodes)
+	if err != nil {
 		return err
 	}
 
-	if nodes.Name.Node == nil {
-		return errors.New(`"sketch" SDK name not found`)
-	}
 	nodes.Name.Node.Value = name
 
 	if nodes.Hooks.Node != nil {
 		RemoveNodes(document, nodes.Hooks.Node)
-	}
-
-	return nil
-}
-
-func validateProjectSdk(document *yaml.Node, expected *sdk.SketchSDKYaml) error {
-	var actual sdk.SketchSDKYaml
-	if err := document.Decode(&actual); err != nil {
-		return err
-	}
-
-	if actual.Name != expected.Name {
-		return fmt.Errorf("internal error: sketch SDK renamed %q (expected %q)", actual.Name, expected.Name)
-	}
-	if !reflect.DeepEqual(expected.Plugs, actual.Plugs) {
-		return errors.New("internal error: sketch SDK plugs not preserved")
-	}
-	if !reflect.DeepEqual(expected.Slots, actual.Slots) {
-		return errors.New("internal error: sketch SDK slots not preserved")
-	}
-	if len(actual.Hooks) > 0 {
-		return errors.New("internal error: hooks not ejected from sketch SDK")
 	}
 
 	return nil
@@ -580,9 +552,9 @@ func editSketchSdk(sketchdir string) error {
 }
 
 // parseSketchYamlUserError converts structured [sdk.ParseSketchYaml] errors
-// into messages that tell sketch SDK users what to fix in their edited YAML.
-// Use it when reporting parse failures from the interactive sketch edit flow,
-// where raw validator errors can be too generic or expose SDK-internal terms.
+// into messages that tell sketch SDK users what to fix in their YAML. Use it
+// when reporting parse failures from sketch command flows, where raw validator
+// errors can be too generic or expose SDK-internal terms.
 func parseSketchYamlUserError(err error) error {
 	var (
 		invalidHook  sdk.InvalidSDKHookNameError
