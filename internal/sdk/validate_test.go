@@ -15,6 +15,9 @@
 package sdk_test
 
 import (
+	"errors"
+	"strings"
+
 	"gopkg.in/check.v1"
 
 	"github.com/canonical/workshop/internal/sdk"
@@ -76,6 +79,50 @@ func (s *ValidateSuite) TestValidateSlotPlugInterfaceName(c *check.C) {
 		err = sdk.ValidateInterfaceName(name)
 		c.Assert(err, check.ErrorMatches, `invalid interface name: ".*"`)
 	}
+}
+
+// TestValidateYaml accepts SDK YAML with known top-level fields and valid
+// semantic content.
+func (s *ValidateSuite) TestValidateYaml(c *check.C) {
+	err := sdk.ValidateYaml(strings.NewReader(`name: valid
+base: ubuntu@24.04
+architecture: amd64
+plugs:
+  models:
+    interface: mount
+slots:
+  service:
+    interface: tunnel
+`))
+
+	c.Check(err, check.IsNil)
+}
+
+// TestValidateYamlInvalidContent reports semantic validation failures after
+// YAML decoding succeeds.
+func (s *ValidateSuite) TestValidateYamlInvalidContent(c *check.C) {
+	err := sdk.ValidateYaml(strings.NewReader(`name: invalid.name
+`))
+
+	c.Check(err, check.ErrorMatches, `invalid SDK name "invalid.name"`)
+}
+
+// TestValidateYamlUnknownFields reports unknown top-level keys as a structured
+// error that callers can inspect with [errors.As].
+func (s *ValidateSuite) TestValidateYamlUnknownFields(c *check.C) {
+	err := sdk.ValidateYaml(strings.NewReader(`name: valid
+zzz-field: later
+aaa-field: first
+`))
+
+	c.Assert(err, check.ErrorMatches, `unknown SDK YAML fields: .*`)
+
+	var unknown *sdk.UnknownYamlFieldsError
+	ok := errors.As(err, &unknown)
+	c.Assert(ok, check.Equals, true)
+	c.Check(unknown.Fields, check.HasLen, 2)
+	c.Check(unknown.Fields, check.Contains, "aaa-field")
+	c.Check(unknown.Fields, check.Contains, "zzz-field")
 }
 
 func (s *ValidateSuite) TestIllegalSdkName(c *check.C) {

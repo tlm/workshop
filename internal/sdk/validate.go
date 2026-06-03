@@ -15,13 +15,31 @@
 package sdk
 
 import (
+	"errors"
 	"fmt"
+	"io"
+	"iter"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
+	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/canonical/workshop/internal/arch"
 )
+
+// UnknownYamlFieldsError reports unknown top-level fields in an SDK YAML
+// definition.
+type UnknownYamlFieldsError struct {
+	Fields []string
+}
+
+type sdkYamlValidator struct {
+	sdkYaml `yaml:",inline"`
+	Unknown map[string]any `yaml:",inline"`
+}
 
 const MAX_SDK_NAME_LENGTH = 40
 
@@ -32,6 +50,67 @@ var (
 	validPlugSlotIface = regexp.MustCompile("^[a-z](?:-?[a-z0-9])*$")
 )
 
+// Error returns a human-readable message describing the unknown YAML fields.
+func (e UnknownYamlFieldsError) Error() string {
+	return fmt.Sprintf(
+		"unknown SDK YAML fields: %s",
+		strings.Join(e.Fields, ", "),
+	)
+}
+
+func infoFromYaml(y *sdkYaml) (*Info, error) {
+	if y.Type == "" {
+		y.Type = Regular.String()
+	}
+	if y.Type == System.String() && !IsSystem(y.Name) {
+		return nil, fmt.Errorf(
+			"type %q is reserved for the system SDK",
+			y.Type,
+		)
+	}
+
+	sdkInfo := &Info{
+		Arch:          y.Arch,
+		BadInterfaces: make(map[string]string),
+		Base:          y.Base,
+		BuiltAt:       nil,
+		Description:   y.Description,
+		License:       y.License,
+		Name:          y.Name,
+		PlugBinds:     make(map[string]PlugRef),
+		Plugs:         make(map[string]*PlugInfo),
+		Slots:         make(map[string]*SlotInfo),
+		Summary:       y.Summary,
+		Title:         y.Title,
+		Type:          Type(y.Type),
+		Version:       y.Version,
+	}
+
+	if y.BuiltAt != nil {
+		sdkInfo.BuiltAt = (*time.Time)(y.BuiltAt)
+	}
+
+	err := setPlugsFromSdkYaml(y, sdkInfo)
+	if err != nil {
+		return nil, err
+	}
+	err = setSlotsFromSdkYaml(y, sdkInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	SanitizePlugsSlots(sdkInfo)
+	return sdkInfo, nil
+}
+
+// newUnknownYamlFieldsError collects unknown YAML field names into an error.
+func newUnknownYamlFieldsError(unknownFields iter.Seq[string]) error {
+	return &UnknownYamlFieldsError{
+		Fields: slices.Collect(unknownFields),
+	}
+}
+
+// Validate checks whether sdk contains a valid SDK definition.
 func Validate(sdk *Info) error {
 	if err := ValidateName(sdk.Name); err != nil {
 		return err
@@ -62,6 +141,35 @@ func Validate(sdk *Info) error {
 		}
 	}
 	return nil
+}
+
+// ValidateYaml checks whether reader contains a valid SDK YAML definition.
+func ValidateYaml(reader io.Reader) error {
+	var validator sdkYamlValidator
+	dec := yaml.NewDecoder(reader)
+	err := dec.Decode(&validator)
+
+	var typeErr *yaml.TypeError
+	if errors.As(err, &typeErr) {
+		return fmt.Errorf(
+			"SDK definition YAML:\n%s",
+			strings.Join(typeErr.Errors, "\n"),
+		)
+	}
+	if err != nil {
+		return err
+	}
+
+	if len(validator.Unknown) > 0 {
+		return newUnknownYamlFieldsError(maps.Keys(validator.Unknown))
+	}
+
+	sdkInfo, err := infoFromYaml(&validator.sdkYaml)
+	if err != nil {
+		return err
+	}
+
+	return Validate(sdkInfo)
 }
 
 // ValidateName checks if a string can be used as an SDK name.
