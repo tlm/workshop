@@ -121,8 +121,14 @@ aaa-field: first
 	ok := errors.As(err, &unknown)
 	c.Assert(ok, check.Equals, true)
 	c.Check(unknown.Fields, check.HasLen, 2)
-	c.Check(unknown.Fields, check.Contains, "aaa-field")
-	c.Check(unknown.Fields, check.Contains, "zzz-field")
+
+	field, ok := unknown.Fields["zzz-field"]
+	c.Assert(ok, check.Equals, true)
+	c.Check(field.Line, check.Equals, 2)
+	c.Check(field.Column, check.Equals, 12)
+
+	_, ok = unknown.Fields["aaa-field"]
+	c.Check(ok, check.Equals, true)
 }
 
 func (s *ValidateSuite) TestIllegalSdkName(c *check.C) {
