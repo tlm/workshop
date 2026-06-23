@@ -46,6 +46,14 @@ var (
 	// Run directory inside workshop
 	WorkshopRunDir = filepath.Join(WorkshopBaseDir, "run")
 
+	// Directory of workshopctl shims that arm SDK binaries with secrets. It is
+	// prepended to PATH so a shim shadows the real binary it wraps.
+	WorkshopBinDir = filepath.Join(WorkshopRunDir, "bin")
+
+	// Directory of secret key registry entries. Each file is named by a key and
+	// records the context (sdk, binary, plug, env-mapping) that key resolves to.
+	WorkshopSecretsDir = filepath.Join(WorkshopRunDir, "secrets")
+
 	// Directory for actions inside workshop
 	WorkshopActionsDir = filepath.Join(WorkshopRunDir, "actions")
 

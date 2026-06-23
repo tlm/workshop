@@ -292,7 +292,14 @@ func (m *SdkManager) doInstallSdk(task *state.Task, tomb *tomb.Tomb) error {
 	})
 
 	// add SDK's plugs and slots
-	if err := m.registerSdk(ctx, w, sdkSetup.Name); err != nil {
+	info, err := m.registerSdk(ctx, w, sdkSetup.Name)
+	if err != nil {
+		return err
+	}
+
+	// Generate workshopctl shims that arm the SDK's binaries with their
+	// secrets. Failure to write a shim cleans up via the SDK uninstall above.
+	if err := m.armSecretBinaries(ctx, w, info); err != nil {
 		return err
 	}
 
@@ -321,6 +328,10 @@ func (m *SdkManager) doUninstallSdk(task *state.Task, tomb *tomb.Tomb) error {
 	rev := revert.New()
 	defer rev.Fail()
 
+	// Remove the SDK's secret-arming shims before unmounting it. Best-effort:
+	// a stale shim shouldn't block uninstall, so failures are only logged.
+	m.disarmSecretBinaries(ctx, w, sdkSetup.Name)
+
 	if err := m.repo.RemoveSdk(project.ProjectId, w, sdkSetup.Name); err != nil {
 		return err
 	}
@@ -329,7 +340,7 @@ func (m *SdkManager) doUninstallSdk(task *state.Task, tomb *tomb.Tomb) error {
 		cleanupCtx, cancel := context.WithTimeout(cleanupCtx, 30*time.Second)
 		defer cancel()
 
-		if reverr := m.registerSdk(cleanupCtx, w, sdkSetup.Name); reverr != nil {
+		if _, reverr := m.registerSdk(cleanupCtx, w, sdkSetup.Name); reverr != nil {
 			logger.Noticef("On doUninstallSdk: cannot re-register %q SDK on cleanup: %v", sdkSetup.Name, reverr)
 		}
 	})
@@ -351,26 +362,30 @@ func (m *SdkManager) doUninstallSdk(task *state.Task, tomb *tomb.Tomb) error {
 	return nil
 }
 
-func (m *SdkManager) registerSdk(ctx context.Context, w, sk string) error {
+func (m *SdkManager) registerSdk(ctx context.Context, w, sk string) (*sdk.Info, error) {
 	wp, err := m.backend.Workshop(ctx, w)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	info, err := wp.SdkInfo(ctx, sk)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if len(info.BadInterfaces) > 0 {
-		return fmt.Errorf("%s", sdk.BadInterfacesSummary(info))
+		return nil, fmt.Errorf("%s", sdk.BadInterfacesSummary(info))
 	}
 
 	if err = policy.CheckInterfaces(info); err != nil {
-		return err
+		return nil, err
 	}
 
-	return m.repo.AddSdk(info)
+	if err = m.repo.AddSdk(info); err != nil {
+		return nil, err
+	}
+
+	return info, nil
 }
 
 func (m *SdkManager) doSnapshotSdk(task *state.Task, tomb *tomb.Tomb) error {

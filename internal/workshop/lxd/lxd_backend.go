@@ -1196,6 +1196,11 @@ write_files:
     [DHCPv6]
     SendRelease=false
   path: /etc/systemd/network/10-netplan-eth0.network.d/sendrelease.conf
+- content: |
+    # Prepend the workshopctl secret-arming shim directory (dirs.WorkshopBinDir)
+    # so a shim shadows the SDK binary it wraps.
+    export PATH="/var/lib/workshop/run/bin:$PATH"
+  path: /etc/profile.d/workshop-secret-bin.sh
 runcmd:
   # Project directory is required for 'workshop exec'.
   - install --directory --mode=755 /project

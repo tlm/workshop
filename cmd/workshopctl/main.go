@@ -35,7 +35,44 @@ var clientConfig = client.Config{
 	Socket: filepath.Join(dirs.WorkshopRunDir, filepath.Base(dirs.SocketPath)+".untrusted"),
 }
 
+// localCommand returns the in-process handler for a workshopctl subcommand that
+// runs locally rather than being forwarded to the daemon:
+//
+//   - secret-exec, which a generated shim invokes to arm an SDK binary and exec
+//     it as the calling user.
+//   - secret-wrapper, which an SDK hook invokes to register a secret-arming
+//     shim for a binary it has just installed.
+//
+// Both run without dropping privileges to the workshop user below.
+func localCommand(argv []string) (handler func() error, ok bool) {
+	if len(argv) < 2 {
+		return nil, false
+	}
+	switch argv[1] {
+	case secretExecCommand:
+		handler = func() error {
+			return runSecretExec(argv[2:])
+		}
+		return handler, true
+	case secretWrapperCommand:
+		handler = func() error {
+			return runSecretWrapper(argv[2:])
+		}
+		return handler, true
+	default:
+		return nil, false
+	}
+}
+
 func main() {
+	if handler, ok := localCommand(os.Args); ok {
+		if err := handler(); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %s\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	// Set the user and group IDs to the workshop user
 	uid := uint32(1000) // Change this to the workshop UID
 
